@@ -121,12 +121,20 @@ fn main() {
     };
 
     println!("requesting...");
+    /*
     let work = client.request(req).and_then(|res| {
         res.body().for_each(move |body: hyper::Chunk| {
             println!("hmmm");
             println!("{}", std::str::from_utf8(&body).unwrap());
             Ok(())
         })
+    });
+    */
+
+    let work = client.request(req).and_then(|res| {
+        res.body()
+            .map(|chunk| futures::stream::iter(chunk.into_iter().map(|b| -> Result<u8, hyper::Error> { Ok(b) })))
+            .flatten().for_each(|byte| Ok(print!("{}", byte as char)))
     });
 
     println!("Before?");
