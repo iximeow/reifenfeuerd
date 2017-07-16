@@ -1,0 +1,28 @@
+[package]
+
+name = "twidder"
+version = "0.0.1"
+authors = [ "iximeow <me@iximeow.net>" ]
+license = "MIT"
+repository = "lol"
+description = """
+a nice twitter
+"""
+
+[[bin]]
+name = "twidder"
+path = "main.rs"
+test = false
+bench = false
+
+[dependencies]
+"termios" = "0.2.2"
+"termion" = "1.4.0"
+"hyper" = "*"
+hyper-tls = "*"
+"rustc-serialize" = "*"
+"oauthcli" = "1.0.6"
+"url" = "*"
+"tokio-core" = "*"
+"futures" = "*"
+
