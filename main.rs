@@ -61,12 +61,7 @@ fn render_tweet(structure: serde_json::Map<String, serde_json::Value>) {
         let source_screen_name = twete["user"]["screen_name"].as_str().unwrap();
         if twete.contains_key("retweeted_status") {
             // render RT, actually
-            match &twete["retweeted_status"] {
-                //                          v--- why is it permissible to write "ref" here? does
-                //                               this take a ref of `value`?
-                &serde_json::Value::Object(ref value) => twete = value,
-                f => panic!(" o no, wrong type of thing! {}", f)
-            }
+            twete = twete["retweeted_status"].as_object().unwrap();
 
             let author_name = twete["user"]["name"].as_str().unwrap();
             let author_screen_name = twete["user"]["screen_name"].as_str().unwrap();
