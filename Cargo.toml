@@ -25,4 +25,4 @@ hyper-tls = "*"
 "url" = "*"
 "tokio-core" = "*"
 "futures" = "*"
-
+"serde_json" = "*"
