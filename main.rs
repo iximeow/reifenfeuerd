@@ -28,7 +28,7 @@ static consumer_secret: &str = "1fxEzRhQtQSWKus4oqDwdg5DALIjGpINg0PGjkYVwKT8EEMF
 static token: &str = "629126745-VePBD9ciKwpuVuIeEcNnxwxQFNWDXEy8KL3dGRRg";
 static token_secret: &str = "uAAruZzJu03NvMlH6cTeGku7NqVPro1ddKN4BxORy5hWG";
 
-static streamurl: &str = "https://userstream.twitter.com/1.1/user.json";
+static streamurl: &str = "https://userstream.twitter.com/1.1/user.json?tweet_mode=extended";
 static tweet_lookup_url: &str = "https://api.twitter.com/1.1/statuses/show.json";
 static user_lookup_url: &str = "https://api.twitter.com/1.1/users/lookup.json";
 
@@ -36,17 +36,18 @@ header! { (Authorization, "Authorization") => [String] }
 header! { (Accept, "Accept") => [String] }
 header! { (ContentType, "Content-Type") => [String] }
 
-fn render_tweet(structure: serde_json::Map<String, serde_json::Value>) {
+fn render_tweet(structure: serde_json::Map<String, serde_json::Value>, client: &hyper::client::Client<HttpsConnector<hyper::client::HttpConnector>>, c2: &mut Core) {
     if structure.contains_key("event") {
         match &structure["event"].as_str().unwrap() {
-            &"follow" => println!("followed! by {} (@{})", structure["source"]["name"], structure["source"]["screen_name"]),
-            &"favorite" => println!("fav"),
+            &"follow" => println!("followed! by {} (@{})", structure["source"]["name"].as_str().unwrap(), structure["source"]["screen_name"].as_str().unwrap()),
+            &"favorite" => println!("{} fav'd", structure["source"]["screen_name"].as_str().unwrap()),
+            &"favorited_retweet" => println!("{} fav'd rt", structure["source"]["screen_name"].as_str().unwrap()),
             e => println!("unrecognized event: {}", e)
         }
     } else if structure.contains_key("delete") {
         println!("delete...");
         let deleted_user_id = structure["delete"]["status"]["user_id_str"].as_str().unwrap();
-        let userjson = look_up_user(deleted_user_id);
+        let userjson = look_up_user(deleted_user_id, client, c2);
         let screen_name = match userjson {
             Some(ref json) => {
                 json[0]["screen_name"].as_str().clone().unwrap()
@@ -66,29 +67,54 @@ fn render_tweet(structure: serde_json::Map<String, serde_json::Value>) {
             let author_name = twete["user"]["name"].as_str().unwrap();
             let author_screen_name = twete["user"]["screen_name"].as_str().unwrap();
 
-            println!("{} (@{}) via {} (@{}) RT:", author_name, author_screen_name, source_name, source_screen_name);
+            println!("{} (@{}) via {} (@{}) RT:                           https://twitter.com/i/web/status/{}", author_name, author_screen_name, source_name, source_screen_name, twete["id_str"].as_str().unwrap());
         } else {
-            println!("{} (@{})", source_name, source_screen_name);
+            println!("{} (@{})                                            https://twitter.com/i/web/status/{}", source_name, source_screen_name, twete["id_str"].as_str().unwrap());
         }
-        let mut twete_text = (if twete["truncated"].as_bool().unwrap() {
-            // get full text here!
-            println!("  ... :/");
-            "asdf"
-        } else {
-            twete["text"].as_str().unwrap()
-        })
-            .replace("&amp;", "&")
-            .replace("&gt;", ">")
-            .replace("&lt;", "<");
-        for url in twete["entries"]["urls"].as_array().unwrap() {
-            twete_text.replace(url["url"].as_str().unwrap(), url["expanded_url"].as_str().unwrap());
-        }
-        println!("{}", twete_text);
+
+        let twete_text = full_twete_text(twete);
+
+        println!("{}", twete_text); // to remove the link for quoted twetes, gotta look for: "is the last url the same as the url for the quoted id?" and if so s///
+
         if twete.contains_key("quoted_status") {
-            println!(" and it's a quote ");
+            let quoted = twete["quoted_status"].as_object().unwrap();
+            println!(
+                "  {} (@{})                                             https://twitter.com/i/web/status/{}\n    {}",
+                quoted["user"]["name"].as_str().unwrap(),
+                quoted["user"]["screen_name"].as_str().unwrap(),
+                quoted["id_str"].as_str().unwrap(),
+                full_twete_text(quoted).split("\n").collect::<Vec<&str>>().join("\n    ")
+            );
+//            println!(" and it's a quote ");
         }
     }
+    println!("-------------------------------------------------------");
     println!("");
+}
+
+fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) -> String {
+//    let looked_up;
+    let mut twete_text: String;
+    twete_text = if twete["truncated"].as_bool().unwrap() {
+        twete["extended_tweet"]["full_text"].as_str().unwrap().to_string()
+//        looked_up = look_up_tweet(twete["id_str"].as_str().unwrap()).unwrap();
+//        looked_up["text"].as_str().unwrap().to_string()
+    } else {
+        twete["text"].as_str().unwrap().to_string()
+    };
+
+    twete_text = twete_text
+        .replace("&amp;", "&")
+        .replace("&gt;", ">")
+        .replace("&lt;", "<");
+
+    for url in twete["entities"]["urls"].as_array().unwrap() {
+        if url["expanded_url"].as_str().unwrap().len() < 200 {
+            twete_text = twete_text.replace(url["url"].as_str().unwrap(), url["expanded_url"].as_str().unwrap());
+        }
+    }
+
+    twete_text
 }
 
 fn signed_get(url: &str) -> hyper::client::Request {
@@ -126,22 +152,15 @@ fn signed_get(url: &str) -> hyper::client::Request {
     req
 }
 
-fn look_up_user(id: &str) -> Option<serde_json::Value> {
-    let mut core = Core::new().unwrap();
-    let connector = HttpsConnector::new(4, &core.handle()).unwrap();
-
-    let client = Client::configure()
-        .connector(connector)
-        .build(&core.handle());
-
+fn look_up_user(id: &str, client: &hyper::client::Client<HttpsConnector<hyper::client::HttpConnector>>, core: &mut Core) -> Option<serde_json::Value> {
     let lookup = client.request(signed_get(&format!("{}?user_id={}", user_lookup_url, id)));
+
     let resp: hyper::Response = core.run(lookup).unwrap();
-//    println!("user lookup request out..");
-    let w = resp.body()
-            .map(|chunk| futures::stream::iter(chunk.into_iter().map(|b| -> Result<u8, hyper::Error> { Ok(b) })))
-            .flatten()
-            .wait();
-    let resp_body = w.map(|r| { r.unwrap() }).collect::<Vec<u8>>();
+
+    let chunks: Vec<hyper::Chunk> = core.run(resp.body().collect()).unwrap();
+
+    let resp_body: Vec<u8> = chunks.into_iter().flat_map(|chunk| chunk.into_iter()).collect();
+
     match serde_json::from_slice(&resp_body) {
         Ok(value) => Some(value),
         Err(e) => {
@@ -151,21 +170,15 @@ fn look_up_user(id: &str) -> Option<serde_json::Value> {
     }
 }
 
-fn look_up_tweet(id: &str) -> Option<serde_json::Value> {
-    let mut core = Core::new().unwrap();
-    let connector = HttpsConnector::new(4, &core.handle()).unwrap();
-
-    let client = Client::configure()
-        .connector(connector)
-        .build(&core.handle());
-
+fn look_up_tweet(id: &str, client: &hyper::client::Client<HttpsConnector<hyper::client::HttpConnector>>, core: &mut Core) -> Option<serde_json::Value> {
     let lookup = client.request(signed_get(&format!("{}?id={}", tweet_lookup_url, id)));
+
     let resp: hyper::Response = core.run(lookup).unwrap();
-    let w = resp.body()
-            .map(|chunk| futures::stream::iter(chunk.into_iter().map(|b| -> Result<u8, hyper::Error> { Ok(b) })))
-            .flatten()
-            .wait();
-    let resp_body = w.map(|r| { r.unwrap() }).collect::<Vec<u8>>();
+
+    let chunks: Vec<hyper::Chunk> = core.run(resp.body().collect()).unwrap();
+
+    let resp_body: Vec<u8> = chunks.into_iter().flat_map(|chunk| chunk.into_iter()).collect();
+
     match serde_json::from_slice(&resp_body) {
         Ok(value) => Some(value),
         Err(e) => {
@@ -185,7 +198,7 @@ fn main() {
 
     let mut core = Core::new().unwrap();
 
-    let connector = HttpsConnector::new(4, &core.handle()).unwrap();
+    let connector = HttpsConnector::new(1, &core.handle()).unwrap();
 
     let client = Client::configure()
         .keep_alive(true)
@@ -195,7 +208,6 @@ fn main() {
     let req = signed_get(streamurl);
 
     println!("starting!");
-//    println!("{}", look_up_user("12503922").unwrap()[0]["screen_name"].as_str().unwrap());
 //    println!("lookup'd");
 
 //    println!("requesting...");
@@ -211,7 +223,16 @@ fn main() {
 
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
 
+    let remote = core.remote();
+
     std::thread::spawn(move || {
+        let mut c2 = Core::new().unwrap(); // i swear this is not where the botnet lives
+        let handle = &c2.handle();
+        let secondaryConnector = HttpsConnector::new(4, handle).unwrap();
+
+        let secondaryClient = Client::configure()
+            .connector(secondaryConnector)
+            .build(handle);
         loop {
             match rx.recv() {
                 Ok(line) => {
@@ -219,7 +240,7 @@ fn main() {
                     //println!("{}", jsonstr);
                     let json: serde_json::Value = serde_json::from_str(&jsonstr).unwrap();
                     match json {
-                        serde_json::Value::Object(objmap) => render_tweet(objmap),
+                        serde_json::Value::Object(objmap) => render_tweet(objmap, &secondaryClient, &mut c2),
                         f => println!("Unexpected object: {}", f)
                     }
                 }
@@ -228,20 +249,20 @@ fn main() {
         }
     });
 
+    println!("Before?");
     let work = client.request(req).and_then(|res| {
         LineStream::new(res.body()
-            .map(|chunk| futures::stream::iter(chunk.into_iter().map(|b| -> Result<u8, hyper::Error> { Ok(b) })))
+            .map(|chunk| futures::stream::iter(chunk.into_iter().map(|b| Ok(b))))
             .flatten())
             .for_each(|s| {
                 if s.len() != 1 {
-                    println!("Send!: {}", std::str::from_utf8(&s).unwrap());
+//                    println!("Send!: {}", std::str::from_utf8(&s).unwrap());
                     tx.send(s);
                 };
                 Ok(())
             })
     });
 
-    println!("Before?");
     let resp = core.run(work).unwrap();
     println!("After?");
 
