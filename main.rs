@@ -760,7 +760,7 @@ fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
         }
     }
 
-    println!("      {}", twete.text.split("\n").collect::<Vec<&str>>().join("\n      "));
+    println!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      "));
 
     if let Some(ref qt_id) = twete.quoted_tweet_id {
         if let Some(ref qt) = tweeter.retrieve_tweet(qt_id) {
@@ -775,7 +775,7 @@ fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
             );
             println!(
                 "        {}",
-                qt.text.split("\n").collect::<Vec<&str>>().join("\n        ")
+                qt.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n        ")
             );
         } else {
             println!("    << don't have quoted tweet! >>");
@@ -1030,7 +1030,8 @@ fn url_encode(s: &str) -> String {
     s
         .replace(" ", "+")
         .replace("%", "%25")
-        .replace("\\n", "%0d")
+        .replace("\\n", "%0a")
+        .replace("\\r", "%0d")
         .replace("!", "%21")
         .replace("#", "%23")
         .replace("&", "%26")
