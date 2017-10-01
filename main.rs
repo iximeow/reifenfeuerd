@@ -1,3 +1,4 @@
+#![feature(vec_remove_item)]
 extern crate serde_json;
 
 use std::str;
@@ -275,6 +276,19 @@ mod tw {
     }
 
     impl Tweet {
+        pub fn get_mentions(&self) -> Vec<&str> {
+            self.text.split(&[
+                ',', '.', '/', ';', '\'',
+                '[', ']', '\\', '~', '!',
+                '@', '#', '$', '%', '^',
+                '&', '*', '(', ')', '-',
+                '=', '{', '}', '|', ':',
+                '"', '<', '>', '?', '`'
+            ][..])
+                .filter(|x| x.starts_with("@") && x.len() > 1)
+                .collect()
+        }
+
         pub fn from_api_json(json: serde_json::Value) -> Option<(Tweet, User)> {
             Tweet::from_json(json.clone()).and_then(|tw| {
                 json.get("user").and_then(|user_json|
@@ -1032,6 +1046,7 @@ fn url_encode(s: &str) -> String {
         .replace("%", "%25")
         .replace("\\n", "%0a")
         .replace("\\r", "%0d")
+        .replace("\\esc", "%1b")
         .replace("!", "%21")
         .replace("#", "%23")
         .replace("&", "%26")
@@ -1045,11 +1060,14 @@ fn url_encode(s: &str) -> String {
         .replace(".", "%2e")
         .replace("/", "%2f")
         .replace(":", "%3a")
+        .replace(";", "%3b")
         .replace(">", "%3e")
         .replace("<", "%3c")
         .replace("?", "%3f")
         .replace("@", "%40")
+        .replace("[", "%5b")
         .replace("\\", "%5c")
+        .replace("]", "%5d")
 }
 
 struct Command {
@@ -1224,7 +1242,33 @@ static REP: Command = Command {
             if reply.len() > 0 {
                 if let Some(inner_twid) = u64::from_str(&id_str).ok() {
                     if let Some(twete) = tweeter.tweet_by_innerid(inner_twid) {
-                        let substituted = url_encode(reply);
+                        // get handles to reply to...
+                        let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
+                        let mut ats: Vec<String> = twete.get_mentions().into_iter().map(|x| x.to_owned()).collect(); //std::collections::HashSet::new();
+                        /*
+                        for handle in twete.get_mentions() {
+                            ats.insert(handle);
+                        }
+                        */
+                        ats.remove_item(&author_handle);
+                        ats.insert(0, author_handle);
+                        // no idea why i have to .to_owned() here --v-- what about twete.rt_tweet is a move?
+                        if let Some(rt_tweet) = twete.rt_tweet.to_owned().and_then(|id| tweeter.retrieve_tweet(&id)) {
+                            let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
+                            ats.remove_item(&rt_author_handle);
+                            ats.insert(1, rt_author_handle);
+                        }
+                        if let Some(qt_tweet) = twete.quoted_tweet_id.to_owned().and_then(|id| tweeter.retrieve_tweet(&id)) {
+                            let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
+                            ats.remove_item(&qt_author_handle);
+                            ats.insert(1, qt_author_handle);
+                        }
+                        //let ats_vec: Vec<&str> = ats.into_iter().collect();
+                        //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
+                        let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
+                        let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
+                        let substituted = url_encode(&full_reply);
+//                        println!("{}", (&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)));
                         queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
                     }
                 }
