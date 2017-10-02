@@ -28,7 +28,6 @@ use linestream::LineStream;
 
 mod tw;
 mod display;
-use display::Render;
 
 //Change these values to your real Twitter API credentials
 static consumer_key: &str = "T879tHWDzd6LvKWdYVfbJL4Su";
@@ -96,83 +95,6 @@ impl Queryer {
     }
 }
 
-fn handle_twitter_event(
-    structure: serde_json::Map<String, serde_json::Value>,
-    tweeter: &mut tw::TwitterCache,
-    mut queryer: &mut Queryer) {
-    tweeter.cache_api_event(structure.clone(), &mut queryer);
-    if let Some(event) = tw::events::Event::from_json(structure) {
-        event.render(&tweeter);
-    };
-}
-
-fn handle_twitter_delete(
-    structure: serde_json::Map<String, serde_json::Value>,
-    tweeter: &mut tw::TwitterCache,
-    _queryer: &mut Queryer) {
-    tw::events::Event::Deleted {
-        user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
-        twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
-    }.render(tweeter);
-}
-
-fn handle_twitter_twete(
-    structure: serde_json::Map<String, serde_json::Value>,
-    tweeter: &mut tw::TwitterCache,
-    _queryer: &mut Queryer) {
-    let twete_id = structure["id_str"].as_str().unwrap().to_string();
-    tweeter.cache_api_tweet(serde_json::Value::Object(structure));
-    display::render_twete(&twete_id, tweeter);
-}
-
-fn handle_twitter_dm(
-    structure: serde_json::Map<String, serde_json::Value>,
-    _tweeter: &mut tw::TwitterCache,
-    _queryer: &mut Queryer) {
-    // show DM
-    println!("{}", structure["direct_message"]["text"].as_str().unwrap());
-    println!("Unknown struture {:?}", structure);
-}
-
-fn handle_twitter_welcome(
-    structure: serde_json::Map<String, serde_json::Value>,
-    tweeter: &mut tw::TwitterCache,
-    queryer: &mut Queryer) {
-//        println!("welcome: {:?}", structure);
-    let user_id_nums = structure["friends"].as_array().unwrap();
-    let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
-    tweeter.set_following(user_id_strs.collect());
-    let settings = tweeter.get_settings(queryer).unwrap();
-    let maybe_my_name = settings["screen_name"].as_str();
-    if let Some(my_name) = maybe_my_name {
-        tweeter.current_user = tw::User {
-            id: "".to_string(),
-            handle: my_name.to_owned(),
-            name: my_name.to_owned()
-        };
-        println!("You are {}", tweeter.current_user.handle);
-    } else {
-        println!("Unable to make API call to figure out who you are...");
-    }
-}
-
-fn handle_twitter(
-    structure: serde_json::Map<String, serde_json::Value>,
-    tweeter: &mut tw::TwitterCache,
-    queryer: &mut Queryer) {
-    if structure.contains_key("event") {
-        handle_twitter_event(structure, tweeter, queryer);
-    } else if structure.contains_key("friends") {
-        handle_twitter_welcome(structure, tweeter, queryer);
-    } else if structure.contains_key("delete") {
-        handle_twitter_delete(structure, tweeter, queryer);
-    } else if structure.contains_key("user") && structure.contains_key("id") {
-        handle_twitter_twete(structure, tweeter, queryer);
-    } else if structure.contains_key("direct_message") {
-        handle_twitter_dm(structure, tweeter, queryer);
-    }
-    println!("");
-}
 /*
 fn signed_web_get(url: &str) -> hyper::client::Request {
 //    let params: Vec<(String, String)> = vec![("track".to_string(), "london".to_string())];
@@ -251,17 +173,6 @@ fn signed_api_req(url: &str, method: Method) -> hyper::client::Request {
     req
 }
 
-fn display_event(
-    twete: serde_json::Value,
-    tweeter: &mut tw::TwitterCache,
-    queryer: &mut Queryer
-) {
-    match twete {
-        serde_json::Value::Object(objmap) => handle_twitter(objmap, tweeter, queryer),
-        _ => ()
-    };
-}
-
 fn main() {
 
     //Track words
@@ -333,7 +244,7 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
 //                    println!("{}", jsonstr);
                     /* TODO: replace from_str with from_slice */
                     let json: serde_json::Value = serde_json::from_str(&jsonstr).unwrap();
-                    display_event(json, &mut tweeter, &mut queryer);
+                    tw::handle_message(json, &mut tweeter, &mut queryer);
                     if tweeter.needs_save && tweeter.caching_permitted {
                         tweeter.store_cache();
                     }

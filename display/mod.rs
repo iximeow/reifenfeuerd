@@ -33,7 +33,6 @@ pub trait Render {
 
 impl Render for tw::events::Event {
     fn render(self, tweeter: &::tw::TwitterCache) {
-        println!("---------------------------------");
         match self {
             tw::events::Event::Deleted { user_id, twete_id } => {
                 if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle) {
@@ -50,30 +49,36 @@ impl Render for tw::events::Event {
                 }
             },
             tw::events::Event::RT_RT { user_id, twete_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("  +rt_rt    : {} (@{})", user.name, user.handle);
                 render_twete(&twete_id, tweeter);
             },
             tw::events::Event::Fav_RT { user_id, twete_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("  +rt_fav   : {} (@{})", user.name, user.handle);
                 render_twete(&twete_id, tweeter);
             },
             tw::events::Event::Fav { user_id, twete_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("{}  +fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset));
                 render_twete(&twete_id, tweeter);
             },
             tw::events::Event::Unfav { user_id, twete_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("{}  -fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset));
                 render_twete(&twete_id, tweeter);
             },
             tw::events::Event::Followed { user_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("  +fl       : {} (@{})", user.name, user.handle);
             },
             tw::events::Event::Unfollowed { user_id } => {
+                println!("---------------------------------");
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("  -fl       : {} (@{})", user.name, user.handle);
             }
