@@ -2,7 +2,7 @@ extern crate serde_json;
 
 use tw::user::User;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tweet {
     pub id: String,
     pub author_id: String,

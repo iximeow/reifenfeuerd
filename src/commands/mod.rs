@@ -20,6 +20,7 @@ pub static COMMANDS: &[&Command] = &[
     &look_up::LOOK_UP_USER,
     &look_up::LOOK_UP_TWEET,
     &view::VIEW,
+    &view::VIEW_THREAD,
     &fav::UNFAV,
     &fav::FAV,
     &twete::DEL,
