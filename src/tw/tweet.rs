@@ -14,6 +14,9 @@ pub struct Tweet {
     #[serde(skip_serializing_if="Option::is_none")]
     #[serde(default = "Option::default")]
     pub rt_tweet: Option<String>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    #[serde(default = "Option::default")]
+    pub reply_to_tweet: Option<String>,
     #[serde(skip)]
     pub internal_id: u64
 }
@@ -47,6 +50,9 @@ impl Tweet {
                 .and_then(|x| x.get("id_str"))
                 .and_then(|x| x.as_str())
                 .map(|x| x.to_owned());
+            let reply_to_tweet = json_map.get("in_reply_to_status_id_str")
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_owned());
             if json_map.contains_key("id_str") &&
                json_map.contains_key("user") &&
                json_map.contains_key("created_at") {
@@ -68,6 +74,7 @@ impl Tweet {
                             .and_then(|x| x.as_str())
                             .map(|x| x.to_owned()),
                         rt_tweet: rt_twete,
+                        reply_to_tweet: reply_to_tweet,
                         internal_id: 0
                     })
                 }

@@ -102,8 +102,15 @@ pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
             let rt = tweeter.retrieve_tweet(rt_id).unwrap();
             // and its author
             let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap();
-            println!("{}  id:{} (rt_id:{}){}",
-                id_color, rt.internal_id, twete.internal_id, color::Fg(color::Reset)
+            println!("{}  id:{} (rt_id:{}){}{}",
+                id_color, rt.internal_id, twete.internal_id,
+                rt.reply_to_tweet.clone()
+                    .map(|id| tweeter.retrieve_tweet(&id)
+                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                        .unwrap_or(format!(" reply_to:twitter::{}", id))
+                    )
+                    .unwrap_or("".to_string()),
+                color::Fg(color::Reset)
             );
             println!("  {}{}{} ({}@{}{}) via {}{}{} ({}@{}{}) RT:",
                 color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset),
@@ -113,8 +120,15 @@ pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
             );
         }
         None => {
-            println!("{}  id:{}{}",
-                id_color, twete.internal_id, color::Fg(color::Reset)
+            println!("{}  id:{}{}{}",
+                id_color, twete.internal_id,
+                twete.reply_to_tweet.clone()
+                    .map(|id| tweeter.retrieve_tweet(&id)
+                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                        .unwrap_or(format!(" reply_to:twitter::{}", id))
+                    )
+                    .unwrap_or("".to_string()),
+                color::Fg(color::Reset)
             );
             println!("  {}{}{} ({}@{}{})",
                 color_for(&user.handle), user.name, color::Fg(color::Reset),
@@ -128,8 +142,15 @@ pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
     if let Some(ref qt_id) = twete.quoted_tweet_id {
         if let Some(ref qt) = tweeter.retrieve_tweet(qt_id) {
             let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap();
-            println!("{}    id:{}{}",
-                id_color, qt.internal_id, color::Fg(color::Reset)
+            println!("{}    id:{}{}{}",
+                id_color, qt.internal_id,
+                qt.reply_to_tweet.clone()
+                    .map(|id| tweeter.retrieve_tweet(&id)
+                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                        .unwrap_or(format!(" reply_to:twitter::{}", id))
+                    )
+                    .unwrap_or("".to_string()),
+                color::Fg(color::Reset)
             );
             println!(
                 "    {}{}{} ({}@{}{})",
