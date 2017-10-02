@@ -319,8 +319,10 @@ fn parse_word_command<'a, 'b>(line: &'b str, commands: &[&'a Command]) -> Option
                 return Some(("", &cmd));
             }
         } else if line.starts_with(cmd.keyword) {
-            // let inner_twid = u64::from_str(&linestr.split(" ").collect::<Vec<&str>>()[1]).unwrap();
-            return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
+            if line.find(" ").map(|x| x == cmd.keyword.len()).unwrap_or(false) {
+                // let inner_twid = u64::from_str(&linestr.split(" ").collect::<Vec<&str>>()[1]).unwrap();
+                return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
+            }
         }
     }
     return None
