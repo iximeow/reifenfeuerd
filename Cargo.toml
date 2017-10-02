@@ -11,7 +11,7 @@ a nice twitter
 
 [[bin]]
 name = "twidder"
-path = "main.rs"
+# path = "main.rs"
 test = false
 bench = false
 
