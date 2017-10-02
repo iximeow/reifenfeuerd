@@ -13,124 +13,13 @@ use std::fs::OpenOptions;
 
 pub mod events;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct User {
-    pub id: String,
-    pub name: String,
-    pub handle: String
-}
+use display::Render;
+use display;
 
-impl Default for User {
-    fn default() -> User {
-        User {
-            id: "".to_owned(),
-            name: "_default_".to_owned(),
-            handle: "_default_".to_owned()
-        }
-    }
-}
-
-impl User {
-    pub fn from_json(json: serde_json::Value) -> Option<User> {
-        if let serde_json::Value::Object(json_map) = json {
-            if json_map.contains_key("id_str") &&
-               json_map.contains_key("name") &&
-               json_map.contains_key("screen_name") {
-                if let (
-                    Some(id_str),
-                    Some(name),
-                    Some(screen_name)
-                ) = (
-                    json_map["id_str"].as_str(),
-                    json_map["name"].as_str(),
-                    json_map["screen_name"].as_str()
-                ) {
-                    return Some(User {
-                        id: id_str.to_owned(),
-                        name: name.to_owned(),
-                        handle: screen_name.to_owned()
-                    })
-                }
-            }
-        }
-        None
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Tweet {
-    pub id: String,
-    pub author_id: String,
-    pub text: String,
-    pub created_at: String,     // lol
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default = "Option::default")]
-    pub quoted_tweet_id: Option<String>,
-    #[serde(skip_serializing_if="Option::is_none")]
-    #[serde(default = "Option::default")]
-    pub rt_tweet: Option<String>,
-    #[serde(skip)]
-    pub internal_id: u64
-}
-
-impl Tweet {
-    pub fn get_mentions(&self) -> Vec<&str> {
-        self.text.split(&[
-            ',', '.', '/', ';', '\'',
-            '[', ']', '\\', '~', '!',
-            '@', '#', '$', '%', '^',
-            '&', '*', '(', ')', '-',
-            '=', '{', '}', '|', ':',
-            '"', '<', '>', '?', '`',
-            ' ' // forgot this initially. awkward.
-        ][..])
-            .filter(|x| x.starts_with("@") && x.len() > 1)
-            .collect()
-    }
-
-    pub fn from_api_json(json: serde_json::Value) -> Option<(Tweet, User)> {
-        Tweet::from_json(json.clone()).and_then(|tw| {
-            json.get("user").and_then(|user_json|
-                User::from_json(user_json.to_owned()).map(|u| (tw, u))
-            )
-        })
-    }
-    pub fn from_json(json: serde_json::Value) -> Option<Tweet> {
-        if let serde_json::Value::Object(json_map) = json {
-            let text = full_twete_text(&json_map);
-            let rt_twete = json_map.get("retweeted_status")
-                .and_then(|x| x.get("id_str"))
-                .and_then(|x| x.as_str())
-                .map(|x| x.to_owned());
-            if json_map.contains_key("id_str") &&
-               json_map.contains_key("user") &&
-               json_map.contains_key("created_at") {
-                if let (
-                    Some(id_str),
-                    Some(author_id),
-                    Some(created_at)
-                ) = (
-                    json_map["id_str"].as_str(),
-                    json_map["user"]["id_str"].as_str(),
-                    json_map["created_at"].as_str()
-                ) {
-                    return Some(Tweet {
-                        id: id_str.to_owned(),
-                        author_id: author_id.to_owned(),
-                        text: text,
-                        created_at: created_at.to_owned(),
-                        quoted_tweet_id: json_map.get("quoted_status_id_str")
-                            .and_then(|x| x.as_str())
-                            .map(|x| x.to_owned()),
-                        rt_tweet: rt_twete,
-                        internal_id: 0
-                    })
-                }
-            }
-        }
-        None
-    }
-}
+pub mod tweet;
+use self::tweet::Tweet;
+pub mod user;
+use self::user::User;
 
 pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) -> String {
     if twete.contains_key("retweeted_status") {
@@ -464,4 +353,88 @@ impl TwitterCache {
     pub fn get_settings(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
         queryer.do_api_get(::ACCOUNT_SETTINGS_URL)
     }
+}
+
+fn handle_twitter_event(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut TwitterCache,
+    mut queryer: &mut ::Queryer) {
+    tweeter.cache_api_event(structure.clone(), &mut queryer);
+    if let Some(event) = events::Event::from_json(structure) {
+        event.render(&tweeter);
+    };
+}
+
+fn handle_twitter_delete(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut TwitterCache,
+    _queryer: &mut ::Queryer) {
+    events::Event::Deleted {
+        user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
+        twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
+    }.render(tweeter);
+}
+
+fn handle_twitter_twete(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut TwitterCache,
+    _queryer: &mut ::Queryer) {
+    let twete_id = structure["id_str"].as_str().unwrap().to_string();
+    tweeter.cache_api_tweet(serde_json::Value::Object(structure));
+    display::render_twete(&twete_id, tweeter);
+}
+
+fn handle_twitter_dm(
+    structure: serde_json::Map<String, serde_json::Value>,
+    _tweeter: &mut TwitterCache,
+    _queryer: &mut ::Queryer) {
+    // show DM
+    println!("{}", structure["direct_message"]["text"].as_str().unwrap());
+    println!("Unknown struture {:?}", structure);
+}
+
+fn handle_twitter_welcome(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut TwitterCache,
+    queryer: &mut ::Queryer) {
+//        println!("welcome: {:?}", structure);
+    let user_id_nums = structure["friends"].as_array().unwrap();
+    let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
+    tweeter.set_following(user_id_strs.collect());
+    let settings = tweeter.get_settings(queryer).unwrap();
+    let maybe_my_name = settings["screen_name"].as_str();
+    if let Some(my_name) = maybe_my_name {
+        tweeter.current_user = User {
+            id: "".to_string(),
+            handle: my_name.to_owned(),
+            name: my_name.to_owned()
+        };
+        println!("You are {}", tweeter.current_user.handle);
+    } else {
+        println!("Unable to make API call to figure out who you are...");
+    }
+}
+
+pub fn handle_message(
+    twete: serde_json::Value,
+    tweeter: &mut TwitterCache,
+    queryer: &mut ::Queryer
+) {
+    match twete {
+        serde_json::Value::Object(objmap) => {
+            if objmap.contains_key("event") {
+                handle_twitter_event(objmap, tweeter, queryer);
+            } else if objmap.contains_key("friends") {
+                handle_twitter_welcome(objmap, tweeter, queryer);
+            } else if objmap.contains_key("delete") {
+                handle_twitter_delete(objmap, tweeter, queryer);
+            } else if objmap.contains_key("user") && objmap.contains_key("id") {
+                handle_twitter_twete(objmap, tweeter, queryer);
+            } else if objmap.contains_key("direct_message") {
+                handle_twitter_dm(objmap, tweeter, queryer);
+            }
+            println!("");
+        },
+        _ => ()
+    };
 }
