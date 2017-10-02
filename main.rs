@@ -23,7 +23,12 @@ use futures::Stream;
 use hyper_tls::HttpsConnector;
 //use json_streamer::JsonObjectStreamer;
 
+mod linestream;
+use linestream::LineStream;
+
 mod tw;
+mod display;
+use display::Render;
 
 //Change these values to your real Twitter API credentials
 static consumer_key: &str = "T879tHWDzd6LvKWdYVfbJL4Su";
@@ -91,136 +96,80 @@ impl Queryer {
     }
 }
 
-extern crate termion;
-
-use termion::color;
-
-fn color_for(handle: &String) -> termion::color::Fg<&color::Color> {
-    let color_map: Vec<&color::Color> = vec![
-        &color::Blue,
-        &color::Cyan,
-        &color::Green,
-        &color::LightBlue,
-        &color::LightCyan,
-        &color::LightGreen,
-        &color::LightMagenta,
-        &color::LightYellow,
-        &color::Magenta,
-        &color::Yellow
-    ];
-
-    let mut quot_hash_quot = std::num::Wrapping(0);
-    for b in handle.as_bytes().iter() {
-        quot_hash_quot = quot_hash_quot + std::num::Wrapping(*b);
-    }
-    color::Fg(color_map[quot_hash_quot.0 as usize % color_map.len()])
-}
-
-
-fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
-    let id_color = color::Fg(color::Rgb(180, 80, 40));
-    let twete = tweeter.retrieve_tweet(twete_id).unwrap();
-    // if we got the tweet, the API gave us the user too
-    let user = tweeter.retrieve_user(&twete.author_id).unwrap();
-    match twete.rt_tweet {
-        Some(ref rt_id) => {
-            // same for a retweet
-            let rt = tweeter.retrieve_tweet(rt_id).unwrap();
-            // and its author
-            let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap();
-            println!("{}  id:{} (rt_id:{}){}",
-                id_color, rt.internal_id, twete.internal_id, color::Fg(color::Reset)
-            );
-            println!("  {}{}{} ({}@{}{}) via {}{}{} ({}@{}{}) RT:",
-                color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset),
-                color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset),
-                color_for(&user.handle), user.name, color::Fg(color::Reset),
-                color_for(&user.handle), user.handle, color::Fg(color::Reset)
-            );
-        }
-        None => {
-            println!("{}  id:{}{}",
-                id_color, twete.internal_id, color::Fg(color::Reset)
-            );
-            println!("  {}{}{} ({}@{}{})",
-                color_for(&user.handle), user.name, color::Fg(color::Reset),
-                color_for(&user.handle), user.handle, color::Fg(color::Reset)
-            );
-        }
-    }
-
-    println!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      "));
-
-    if let Some(ref qt_id) = twete.quoted_tweet_id {
-        if let Some(ref qt) = tweeter.retrieve_tweet(qt_id) {
-            let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap();
-            println!("{}    id:{}{}",
-                id_color, qt.internal_id, color::Fg(color::Reset)
-            );
-            println!(
-                "    {}{}{} ({}@{}{})",
-                color_for(&qt_author.handle), qt_author.name, color::Fg(color::Reset),
-                color_for(&qt_author.handle), qt_author.handle, color::Fg(color::Reset)
-            );
-            println!(
-                "        {}",
-                qt.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n        ")
-            );
-        } else {
-            println!("    << don't have quoted tweet! >>");
-        }
-    }
-}
-
-fn render_twitter_event(
+fn handle_twitter_event(
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut tw::TwitterCache,
     mut queryer: &mut Queryer) {
-    if structure.contains_key("event") {
-        tweeter.cache_api_event(structure.clone(), &mut queryer);
-        if let Some(event) = tw::events::Event::from_json(structure) {
-            event.render(&tweeter);
-        };
-    } else if structure.contains_key("friends") {
+    tweeter.cache_api_event(structure.clone(), &mut queryer);
+    if let Some(event) = tw::events::Event::from_json(structure) {
+        event.render(&tweeter);
+    };
+}
+
+fn handle_twitter_delete(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut tw::TwitterCache,
+    _queryer: &mut Queryer) {
+    tw::events::Event::Deleted {
+        user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
+        twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
+    }.render(tweeter);
+}
+
+fn handle_twitter_twete(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut tw::TwitterCache,
+    _queryer: &mut Queryer) {
+    let twete_id = structure["id_str"].as_str().unwrap().to_string();
+    tweeter.cache_api_tweet(serde_json::Value::Object(structure));
+    display::render_twete(&twete_id, tweeter);
+}
+
+fn handle_twitter_dm(
+    structure: serde_json::Map<String, serde_json::Value>,
+    _tweeter: &mut tw::TwitterCache,
+    _queryer: &mut Queryer) {
+    // show DM
+    println!("{}", structure["direct_message"]["text"].as_str().unwrap());
+    println!("Unknown struture {:?}", structure);
+}
+
+fn handle_twitter_welcome(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut tw::TwitterCache,
+    queryer: &mut Queryer) {
 //        println!("welcome: {:?}", structure);
-        let user_id_nums = structure["friends"].as_array().unwrap();
-        let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
-        tweeter.set_following(user_id_strs.collect());
-        let settings = tweeter.get_settings(queryer).unwrap();
-        let maybe_my_name = settings["screen_name"].as_str();
-        if let Some(my_name) = maybe_my_name {
-            tweeter.current_user = tw::User {
-                id: "".to_string(),
-                handle: my_name.to_owned(),
-                name: my_name.to_owned()
-            };
-            println!("You are {}", tweeter.current_user.handle);
-        } else {
-            println!("Unable to make API call to figure out who you are...");
-        }
+    let user_id_nums = structure["friends"].as_array().unwrap();
+    let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
+    tweeter.set_following(user_id_strs.collect());
+    let settings = tweeter.get_settings(queryer).unwrap();
+    let maybe_my_name = settings["screen_name"].as_str();
+    if let Some(my_name) = maybe_my_name {
+        tweeter.current_user = tw::User {
+            id: "".to_string(),
+            handle: my_name.to_owned(),
+            name: my_name.to_owned()
+        };
+        println!("You are {}", tweeter.current_user.handle);
+    } else {
+        println!("Unable to make API call to figure out who you are...");
+    }
+}
+
+fn handle_twitter(
+    structure: serde_json::Map<String, serde_json::Value>,
+    tweeter: &mut tw::TwitterCache,
+    queryer: &mut Queryer) {
+    if structure.contains_key("event") {
+        handle_twitter_event(structure, tweeter, queryer);
+    } else if structure.contains_key("friends") {
+        handle_twitter_welcome(structure, tweeter, queryer);
     } else if structure.contains_key("delete") {
-        let deleted_user_id = structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string();
-        let deleted_tweet_id = structure["delete"]["status"]["id_str"].as_str().unwrap().to_string();
-        if let Some(handle) = tweeter.retrieve_user(&deleted_user_id).map(|x| &x.handle) {
-            if let Some(_tweet) = tweeter.retrieve_tweet(&deleted_tweet_id) {
-                println!("-------------DELETED------------------");
-                render_twete(&deleted_tweet_id, tweeter);
-                println!("-------------DELETED------------------");
-            } else {
-                println!("dunno what, but do know who: {} - {}", deleted_user_id, handle);
-            }
-        } else {
-            println!("delete...");
-            println!("dunno who...");
-        }
+        handle_twitter_delete(structure, tweeter, queryer);
     } else if structure.contains_key("user") && structure.contains_key("id") {
-        let twete_id = structure["id_str"].as_str().unwrap().to_string();
-        tweeter.cache_api_tweet(serde_json::Value::Object(structure));
-        render_twete(&twete_id, tweeter);
+        handle_twitter_twete(structure, tweeter, queryer);
     } else if structure.contains_key("direct_message") {
-        // show DM
-        println!("{}", structure["direct_message"]["text"].as_str().unwrap());
-        println!("Unknown struture {:?}", structure);
+        handle_twitter_dm(structure, tweeter, queryer);
     }
     println!("");
 }
@@ -308,7 +257,7 @@ fn display_event(
     queryer: &mut Queryer
 ) {
     match twete {
-        serde_json::Value::Object(objmap) => render_twitter_event(objmap, tweeter, queryer),
+        serde_json::Value::Object(objmap) => handle_twitter(objmap, tweeter, queryer),
         _ => ()
     };
 }
@@ -417,8 +366,9 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
 
 fn url_encode(s: &str) -> String {
     s
-        .replace(" ", "+")
         .replace("%", "%25")
+        .replace("+", "%2b")
+        .replace(" ", "+")
         .replace("\\n", "%0a")
         .replace("\\r", "%0d")
         .replace("\\esc", "%1b")
@@ -429,7 +379,6 @@ fn url_encode(s: &str) -> String {
         .replace("(", "%28")
         .replace(")", "%29")
         .replace("*", "%2a")
-//                            .replace("+", "%2b")
         .replace(",", "%2c")
         .replace("-", "%2d")
         .replace(".", "%2e")
@@ -520,60 +469,3 @@ fn connect_twitter_stream() -> chan::Receiver<Vec<u8>> {
 
     twete_rx
 }
-
-//extern crate futures;
-//use futures::stream::Stream;
-//use futures::{Future, Poll, Async};
-use futures::{Poll, Async};
-/*
-fn main() {
-  let lines = "line 1.\nline 2...\n   LINE 3  \n".as_bytes();
-  let bytestream = futures::stream::iter(lines.iter().map(|byte| -> Result<_, ()> { Ok(*byte) }));
-  let linestream = LineStream::new(bytestream);
-  
-  linestream.for_each(|line| {
-    println!("Bytes: {:?}", line);
-    println!("Line: {}", String::from_utf8(line).unwrap());
-    Ok(())
-  }).wait().unwrap()
-}
-*/
-
-struct LineStream<S, E> where S: Stream<Item=u8, Error=E> {
-  stream: S,
-  progress: Vec<u8>
-}
-
-impl<S,E> LineStream<S, E> where S: Stream<Item=u8, Error=E> + Sized {
-  pub fn new(stream: S) -> LineStream<S, E> {
-    LineStream {
-      stream: stream,
-      progress: vec![]
-    }
-  }
-}
-
-impl<S, E> Stream for LineStream<S, E> where S: Stream<Item=u8, Error=E> {
-  type Item = Vec<u8>;
-  type Error = E;
-  
-  fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-    loop {
-      match self.stream.poll() {
-        Ok(Async::Ready(Some(byte))) => {
-          if byte == 0x0a { 
-            let mut new_vec = vec![];
-            std::mem::swap(&mut self.progress, &mut new_vec);
-            return Ok(Async::Ready(Some(new_vec)))
-          } else {
-            self.progress.push(byte)
-          }
-        },
-        Ok(Async::Ready(None)) => return Ok(Async::Ready(None)),
-        Ok(Async::NotReady) => return Ok(Async::NotReady),
-        Err(e) => return Err(e)
-      }
-    }
-  }
-}
-
