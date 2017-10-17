@@ -108,9 +108,9 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         ats.insert(1, rt_author_handle);
                     }
                     if let Some(qt_tweet) = twete.quoted_tweet_id.to_owned().and_then(|id| tweeter.retrieve_tweet(&id)) {
-                        let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
-                        ats.remove_item(&qt_author_handle);
-                        ats.insert(1, qt_author_handle);
+                    //    let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
+                    //    ats.remove_item(&qt_author_handle);
+                    //    ats.insert(1, qt_author_handle);
                     }
                     //let ats_vec: Vec<&str> = ats.into_iter().collect();
                     //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
