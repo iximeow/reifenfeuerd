@@ -27,9 +27,35 @@ pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) 
     }
     let mut twete_text: String;
     twete_text = if twete["truncated"].as_bool().unwrap() {
-        twete["extended_tweet"]["full_text"].as_str().unwrap().to_string()
+        let extended = twete.get("extended_tweet");
+        match extended {
+            Some(extended_tweet) => {
+                let full_text = extended_tweet.get("full_text");
+                match full_text {
+                    Some(text) => {
+                        return text.as_str().unwrap().to_string()
+                    }
+                    None => {
+                        println!("Missing extended_tweet text. Full extended_tweet json: {:?}", full_text);
+                    }
+                }
+            },
+            None => {
+                println!("Missing extended text. Full tweet json: {:?}", twete);
+            }
+        }
+        panic!("API bug? changed?");
     } else {
-        twete["text"].as_str().unwrap().to_string()
+        match twete.get("text") {
+            Some(text) => text.as_str().unwrap().to_string(),
+            None => {
+                // fall back to it maybe being at full_text...
+                match twete.get("full_text") {
+                    Some(text) => text.as_str().unwrap().to_string(),
+                    None => panic!("api bug? text not present? text: {:?}", twete)
+                }
+            }
+        }
     };
 
     let quoted_tweet_id = twete.get("quoted_tweet_id_str").and_then(|x| x.as_str());
@@ -346,7 +372,7 @@ impl TwitterCache {
     }
 
     fn look_up_tweet(&mut self, id: &str, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
-        let url = &format!("{}?id={}", ::TWEET_LOOKUP_URL, id);
+        let url = &format!("{}&id={}", ::TWEET_LOOKUP_URL, id);
         queryer.do_api_get(url)
     }
 
