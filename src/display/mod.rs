@@ -99,7 +99,12 @@ impl Render for tw::events::Event {
 
 pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
     let id_color = color::Fg(color::Rgb(180, 80, 40));
-    let twete = tweeter.retrieve_tweet(twete_id).unwrap();
+    let maybe_twete = tweeter.retrieve_tweet(twete_id);
+    if maybe_twete.is_none() {
+        println!("No such tweet: {}", twete_id);
+        return;
+    }
+    let twete = maybe_twete.unwrap();
     // if we got the tweet, the API gave us the user too
     let user = tweeter.retrieve_user(&twete.author_id).unwrap();
     match twete.rt_tweet {

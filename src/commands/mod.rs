@@ -14,6 +14,7 @@ mod view;
 mod quit;
 mod fav;
 mod follow;
+mod thread;
 
 pub static COMMANDS: &[&Command] = &[
     &show_cache::SHOW_CACHE,
@@ -31,7 +32,10 @@ pub static COMMANDS: &[&Command] = &[
     &twete::QUOTE,
     &twete::RETWETE,
     &twete::REP,
-    &twete::THREAD
+    &twete::THREAD,
+    &thread::FORGET_THREAD,
+    &thread::REMEMBER_THREAD,
+    &thread::LIST_THREADS
     /*
         &QUIT,
         &LOOK_UP_USER,

@@ -93,6 +93,7 @@ pub struct TwitterCache {
     pub followers: HashSet<String>,
     lost_followers: HashSet<String>,
     follower_history: HashMap<String, (String, i64)>, // userid:date??
+    threads: HashMap<String, u64>, // thread : latest_tweet_in_thread
     #[serde(skip)]
     id_to_tweet_id: HashMap<u64, String>,
     #[serde(skip)]
@@ -121,7 +122,8 @@ impl TwitterCache {
             id_to_tweet_id: HashMap::new(),
             needs_save: false,
             caching_permitted: true,
-            current_user: User::default()
+            current_user: User::default(),
+            threads: HashMap::new()
         }
     }
     fn new_without_caching() -> TwitterCache {
@@ -386,6 +388,34 @@ impl TwitterCache {
 
     pub fn get_followers(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
         queryer.do_api_get(::GET_FOLLOWER_IDS_URL)
+    }
+
+    pub fn set_thread(&mut self, name: String, last_id: u64) -> bool {
+        self.threads.insert(name, last_id);
+        true
+    }
+
+    pub fn update_thread(&mut self, name: String, last_id: u64) -> bool {
+        // ensure that last_id is threaded tweet from the last one stored by name.
+        // if no thread is stored by name, just use last_id.
+        // who'm am'st i kid'ing, just store it for now lol
+        self.threads.insert(name, last_id);
+        true
+    }
+
+    pub fn latest_in_thread(&self, name: String) -> Option<&u64> {
+        self.threads.get(&name)
+    }
+
+    pub fn forget_thread(&mut self, name: String) {
+        self.threads.remove(&name);
+    }
+
+    /*
+     * can the return type here be Iterator<
+     */
+    pub fn threads<'a>(&'a self) -> Box<Iterator<Item=&String> + 'a> {
+        Box::new(self.threads.keys())
     }
 }
 
