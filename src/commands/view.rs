@@ -45,3 +45,27 @@ fn view_tr_inner(id: u64, mut tweeter: &mut tw::TwitterCache, queryer: &mut Quer
     display::render_twete(&twete.id, tweeter);
 //    println!("link: https://twitter.com/i/web/status/{}", twete.id);
 }
+
+pub static VIEW_THREAD_FORWARD: Command = Command {
+    keyword: "viewthread+",
+    params: 1,
+    exec: view_tr_forward
+};
+
+fn view_tr_forward(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    // first see if we have a thread for the tweet named
+    // if we do not, we'll have to mimic a request like 
+    // curl 'https://twitter.com/jojonila/status/914383908090691584' \
+    //   -H 'accept-encoding: gzip, deflate, br' \
+    //   -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+    //     (KHTML, like Gecko) Chrome/61.0.3163.91 Safari/537.36' \
+    //   -H 'x-overlay-request: true'
+    /*
+     * above results in a response:
+     * {
+     *  "init_data": { ... },
+     *  "title": "tweet, but for page title",
+     *  ..
+     *  "page": "HTML THAT'S JUST DROPPED IN AS A MODAL."
+     *  */
+}
