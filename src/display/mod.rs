@@ -34,6 +34,12 @@ pub trait Render {
 impl Render for tw::events::Event {
     fn render(self, tweeter: &::tw::TwitterCache) {
         match self {
+            tw::events::Event::Quoted { user_id, twete_id } => {
+                println!("---------------------------------");
+                let user = tweeter.retrieve_user(&user_id).unwrap();
+                println!("  quoted_tweet    : {} (@{})", user.name, user.handle);
+                render_twete(&twete_id, tweeter);
+            }
             tw::events::Event::Deleted { user_id, twete_id } => {
                 if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle) {
                     if let Some(_tweet) = tweeter.retrieve_tweet(&twete_id) {

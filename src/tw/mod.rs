@@ -241,6 +241,10 @@ impl TwitterCache {
     pub fn cache_api_event(&mut self, json: serde_json::Map<String, serde_json::Value>, mut queryer: &mut ::Queryer) {
         /* don't really care to hold on to who fav, unfav, ... when, just pick targets out. */
         match json.get("event").and_then(|x| x.as_str()) {
+            Some("quoted_tweet") => {
+                self.cache_api_tweet(json["target_object"].clone());
+                self.cache_api_user(json["source"].clone());
+            },
             Some("favorite") => {
                 self.cache_api_tweet(json["target_object"].clone());
                 self.cache_api_user(json["source"].clone());

@@ -6,6 +6,7 @@ pub enum Event {
     Fav_RT { user_id: String, twete_id: String },
     Fav { user_id: String, twete_id: String },
     Unfav { user_id: String, twete_id: String },
+    Quoted { user_id: String, twete_id: String },
     Followed { user_id: String },
     Unfollowed { user_id: String }
 }
@@ -35,9 +36,14 @@ impl Event {
                 user_id: structure["source"]["id_str"].as_str().unwrap().to_owned(),
                 twete_id: structure["target_object"]["id_str"].as_str().unwrap().to_owned()
             }),
+            &"quoted_tweet" => Some(Event::Quoted {
+                user_id: structure["source"]["id_str"].as_str().unwrap().to_owned(),
+                twete_id: structure["target_object"]["id_str"].as_str().unwrap().to_owned()
+            }),
+//                &"list_member_added" =>
+//                what about removed?
 //                &"blocked" => Blocked { },
 //                &"unblocked" => Unblocked { },
-//                &"quoted_tweet" => ???,
             e => { println!("unrecognized event: {}", e); None }
         }
     }
