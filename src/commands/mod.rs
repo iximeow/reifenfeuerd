@@ -13,6 +13,7 @@ mod look_up;
 mod view;
 mod quit;
 mod fav;
+mod follow;
 
 pub static COMMANDS: &[&Command] = &[
     &show_cache::SHOW_CACHE,
@@ -21,6 +22,8 @@ pub static COMMANDS: &[&Command] = &[
     &look_up::LOOK_UP_TWEET,
     &view::VIEW,
     &view::VIEW_THREAD,
+    &follow::FOLLOW,
+    &follow::UNFOLLOW,
     &fav::UNFAV,
     &fav::FAV,
     &twete::DEL,
