@@ -3,8 +3,6 @@ use ::Queryer;
 
 use commands::Command;
 
-use std::str::FromStr;
-
 static FOLLOW_URL: &str = "https://api.twitter.com/1.1/friendships/create.json";
 static UNFOLLOW_URL: &str = "https://api.twitter.com/1.1/friendships/destroy.json";
 
