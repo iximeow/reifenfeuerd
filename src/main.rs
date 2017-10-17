@@ -40,6 +40,7 @@ static STREAMURL: &str = "https://userstream.twitter.com/1.1/user.json?tweet_mod
 static TWEET_LOOKUP_URL: &str = "https://api.twitter.com/1.1/statuses/show.json?tweet_mode=extended";
 static USER_LOOKUP_URL: &str = "https://api.twitter.com/1.1/users/show.json";
 static ACCOUNT_SETTINGS_URL: &str = "https://api.twitter.com/1.1/account/settings.json";
+static GET_FOLLOWER_IDS_URL: &str = "https://api.twitter.com/1.1/followers/ids.json?stringify_ids=true";
 
 header! { (Authorization, "Authorization") => [String] }
 header! { (Accept, "Accept") => [String] }

@@ -383,6 +383,10 @@ impl TwitterCache {
     pub fn get_settings(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
         queryer.do_api_get(::ACCOUNT_SETTINGS_URL)
     }
+
+    pub fn get_followers(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
+        queryer.do_api_get(::GET_FOLLOWER_IDS_URL)
+    }
 }
 
 fn handle_twitter_event(
@@ -443,6 +447,9 @@ fn handle_twitter_welcome(
     } else {
         println!("Unable to make API call to figure out who you are...");
     }
+    let followers = tweeter.get_followers(queryer).unwrap();
+    let id_arr: Vec<String> = followers["ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
+    tweeter.set_followers(id_arr);
 }
 
 pub fn handle_message(
