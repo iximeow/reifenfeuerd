@@ -62,8 +62,11 @@ impl Render for tw::events::Event {
             },
             tw::events::Event::Fav_RT { user_id, twete_id } => {
                 println!("---------------------------------");
-                let user = tweeter.retrieve_user(&user_id).unwrap();
-                println!("  +rt_fav   : {} (@{})", user.name, user.handle);
+                if let Some(user) = tweeter.retrieve_user(&user_id) {
+                    println!("  +rt_fav   : {} (@{})", user.name, user.handle);
+                } else {
+                    println!("  +rt_fav but don't know who {} is", user_id);
+                }
                 render_twete(&twete_id, tweeter);
             },
             tw::events::Event::Fav { user_id, twete_id } => {
