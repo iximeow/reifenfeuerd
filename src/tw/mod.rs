@@ -257,8 +257,16 @@ impl TwitterCache {
                 self.cache_api_user(json["source"].clone());
                 self.cache_api_user(json["target"].clone());
             },
-            Some("retweeted_retweet") => ()/* cache rt */,
-            Some("favorited_retweet") => ()/* cache rt */,
+            Some("retweeted_retweet") => {
+                self.cache_api_tweet(json["target_object"].clone());
+                self.cache_api_user(json["source"].clone());
+                self.cache_api_user(json["target"].clone());
+            },
+            Some("favorited_retweet") => {
+                self.cache_api_tweet(json["target_object"].clone());
+                self.cache_api_user(json["source"].clone());
+                self.cache_api_user(json["target"].clone());
+            },
             Some("delete") => {
                 let user_id = json["delete"]["status"]["user_id_str"].as_str().unwrap().to_string();
                 self.fetch_user(&user_id, &mut queryer);
