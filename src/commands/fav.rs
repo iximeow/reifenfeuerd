@@ -1,6 +1,8 @@
 use tw;
 use ::Queryer;
 
+use tw::TweetId;
+
 use commands::Command;
 
 use std::str::FromStr;
@@ -16,9 +18,17 @@ pub static UNFAV: Command = Command {
 
 fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     // TODO handle this unwrap
-    let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.tweet_by_innerid(inner_twid).unwrap();
-    queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id));
+//    let inner_twid = u64::from_str(&line).unwrap();
+    let maybe_id = TweetId::parse(line.to_owned());
+    match maybe_id {
+        Some(twid) => {
+            let twete = tweeter.retrieve_tweet(&twid).unwrap();
+            queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id));
+        }
+        None => {
+            println!("Invalid id: {}", line);
+        }
+    }
 }
 
 pub static FAV: Command = Command {
@@ -29,7 +39,14 @@ pub static FAV: Command = Command {
 
 fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     // TODO handle this unwrap
-    let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.tweet_by_innerid(inner_twid).unwrap();
-    queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id));
+    let maybe_id = TweetId::parse(line.to_owned());
+    match maybe_id {
+        Some(twid) => {
+            let twete = tweeter.retrieve_tweet(&twid).unwrap();
+            queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id));
+        }
+        None => {
+            println!("Invalid id: {}", line);
+        }
+    }
 }

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 extern crate chrono;
@@ -95,13 +96,136 @@ pub struct TwitterCache {
     follower_history: HashMap<String, (String, i64)>, // userid:date??
     threads: HashMap<String, u64>, // thread : latest_tweet_in_thread
     #[serde(skip)]
-    id_to_tweet_id: HashMap<u64, String>,
-    #[serde(skip)]
     pub needs_save: bool,
     #[serde(skip)]
     pub caching_permitted: bool,
     #[serde(skip)]
-    pub current_user: User
+    pub current_user: User,
+    #[serde(skip)]
+    id_conversions: IdConversions
+}
+
+// Internally, a monotonically increasin i64 is always the id used.
+// This is the client's id, not the twitter id for a tweet.
+//
+// Id forms:
+//   num            // implicitly today:num
+//   today:num      // last_tweet_of_yesterday_id + num
+//   20171009:num   // last_tweet_of_previous_day_id + num
+//   open question: what about 20171009:123451234 .. does this reference a future tweet? should
+//   probably cause an issue if this would overflow into the next day.
+//   ::num          // tweet id num
+//   twitter::num   // twiter tweet id num
+struct IdConversions {
+    // maps a day to the base id for tweets off that day.
+    id_per_date: HashMap<String, u64>,
+    id_to_tweet_id: HashMap<u64, String>
+    // twitter id to id is satisfied by looking up the twitter id in tweeter.tweets and getting
+    // .inner_id
+}
+
+impl Default for IdConversions {
+    fn default() -> Self {
+        IdConversions {
+            id_per_date: HashMap::new(),
+            id_to_tweet_id: HashMap::new()
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TweetId {
+    Today(u64),         // just a number
+    Dated(String, u64), // 20171002:number
+    Bare(u64),          // ::number
+    Twitter(String)     // twitter::number
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn tweet_id_parse_test() {
+        assert_eq!(TweetId::parse("12345".to_string()), Some(TweetId::Today(12345)));
+        assert_eq!(TweetId::parse("20170403:12345".to_string()), Some(TweetId::Dated("20170403".to_string(), 12345)));
+        assert_eq!(TweetId::parse(":12345".to_string()), Some(TweetId::Bare(12345)));
+        assert_eq!(TweetId::parse("twitter:12345".to_string()), Some(TweetId::Twitter("12345".to_string())));
+        assert_eq!(TweetId::parse("twitter:asdf".to_string()), Some(TweetId::Twitter("asdf".to_string())));
+        assert_eq!(TweetId::parse("a2345".to_string()), None);
+        assert_eq!(TweetId::parse(":".to_string()), None);
+        assert_eq!(TweetId::parse("::".to_string()), None);
+        assert_eq!(TweetId::parse("a:13234".to_string()), None);
+        assert_eq!(TweetId::parse(":a34".to_string()), None);
+        assert_eq!(TweetId::parse("asdf:34".to_string()), None);
+    }
+}
+
+impl TweetId {
+    pub fn parse(id_str: String) -> Option<TweetId> {
+        // ...
+        if id_str.starts_with("twitter:") {
+            Some(TweetId::Twitter(id_str.chars().skip("twitter:".len()).collect()))
+        } else if id_str.starts_with(":") {
+            let rest = id_str.chars().skip(1);
+            if rest.clone().all(|x| x.is_digit(10)) {
+                match u64::from_str(&rest.collect::<String>()) {
+                    Ok(num) => Some(TweetId::Bare(num)),
+                    Err(e) => {
+                        println!("Invalid id: {} - {}", id_str, e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else if id_str.find(":") == Some(8) {
+            let strings: Vec<&str> = id_str.split(":").collect();
+            if strings.len() == 2 {
+                match (strings[0].chars().all(|x| x.is_digit(10)), u64::from_str(strings[1])) {
+                    (true, Ok(num)) => Some(TweetId::Dated(strings[0].to_owned(), num)),
+                    _ => {
+                        println!("Invalid format.");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else if id_str.chars().all(|x| x.is_digit(10)) {
+            // today
+            match u64::from_str(&id_str) {
+                Ok(num) => Some(TweetId::Today(num)),
+                Err(e) => {
+                    println!("Invalid id: {} - {}", id_str, e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl IdConversions {
+    // So this is twid -> Option<u64>
+    // elsewhere we u64 -> Option<Tweet>
+    //
+    // except in the TweetId::Twitter case we TweetId -> Option<Tweet> -> Option<u64> ... to ->
+    // Option<Tweet> in the future?
+    fn to_inner_id(&self, tweeter: &TwitterCache, twid: TweetId) -> Option<u64> {
+        match twid {
+            TweetId::Today(num) => {
+                let first_for_today: u64 = 0;
+                Some(first_for_today + num)
+            },
+            TweetId::Dated(date, num) => {
+                let first_for_date: u64 = 0;
+                Some(first_for_date + num)
+            },
+            TweetId::Bare(num) => Some(num),
+            twid @ TweetId::Twitter(_) => tweeter.retrieve_tweet(&twid).map(|x| x.internal_id)
+        }
+    }
 }
 
 impl TwitterCache {
@@ -119,11 +243,11 @@ impl TwitterCache {
             followers: HashSet::new(),
             lost_followers: HashSet::new(),
             follower_history: HashMap::new(),
-            id_to_tweet_id: HashMap::new(),
             needs_save: false,
             caching_permitted: true,
             current_user: User::default(),
-            threads: HashMap::new()
+            threads: HashMap::new(),
+            id_conversions: IdConversions::default()
         }
     }
     fn new_without_caching() -> TwitterCache {
@@ -175,7 +299,7 @@ impl TwitterCache {
         if !self.tweets.contains_key(&tw.id.to_owned()) {
             if tw.internal_id == 0 {
                 tw.internal_id = (self.tweets.len() as u64) + 1;
-                self.id_to_tweet_id.insert(tw.internal_id, tw.id.to_owned());
+                self.id_conversions.id_to_tweet_id.insert(tw.internal_id, tw.id.to_owned());
                 self.tweets.insert(tw.id.to_owned(), tw);
             }
         }
@@ -298,12 +422,23 @@ impl TwitterCache {
             /* nothing else to care about now, i think? */
         }
     }
-    pub fn tweet_by_innerid(&self, inner_id: u64) -> Option<&Tweet> {
-        let id = &self.id_to_tweet_id[&inner_id];
-        self.retrieve_tweet(id)
-    }
-    pub fn retrieve_tweet(&self, tweet_id: &String) -> Option<&Tweet> {
-        self.tweets.get(tweet_id)
+    pub fn retrieve_tweet(&self, tweet_id: &TweetId) -> Option<&Tweet> {
+        match tweet_id {
+            &TweetId::Bare(ref id) => {
+                self.id_conversions.id_to_tweet_id.get(id)
+                    .and_then(|x| self.tweets.get(x))
+            },
+            &TweetId::Today(ref id) => {
+                let inner_id = self.id_conversions.id_to_tweet_id.get(id);
+                panic!("Retrieving tweets with dated IDs is not yet supported.");
+                None
+            },
+            &TweetId::Dated(ref date, ref id) => {
+                panic!("Retrieving tweets with dated IDs is not yet supported.");
+                None
+            },
+            &TweetId::Twitter(ref id) => self.tweets.get(id)
+        }
     }
     pub fn retrieve_user(&self, user_id: &String) -> Option<&User> {
         self.users.get(user_id)

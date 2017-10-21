@@ -2,6 +2,8 @@ use tw;
 use ::Queryer;
 use ::display;
 
+use tw::TweetId;
+
 use commands::Command;
 
 use std::str::FromStr;
@@ -30,10 +32,15 @@ fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer
         let name = name_bare.trim();
         let id_str = text.trim();
         if name.len() > 0 {
-            if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if tweeter.tweet_by_innerid(inner_twid).is_some() {
-                    tweeter.set_thread(name.to_string(), inner_twid);
-                    println!("Ok! Recorded {} as thread {}", inner_twid, name);
+            let maybe_id = TweetId::parse(line.to_owned());
+            match maybe_id {
+                Some(twid) => {
+                    let twete = tweeter.retrieve_tweet(&twid).unwrap().clone();
+                    tweeter.set_thread(name.to_string(), twete.internal_id);
+                    println!("Ok! Recorded {:?} as thread {}", twid, name);
+                }
+                None => {
+                    println!("Invalid id: {}", line);
                 }
             }
         }
@@ -51,9 +58,12 @@ fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Querye
     for k in tweeter.threads() {
         println!("Thread: {}", k);
         let latest_inner_id = tweeter.latest_in_thread(k.to_owned()).unwrap();
-        let twete = tweeter.tweet_by_innerid(*latest_inner_id).unwrap();
+        if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(*latest_inner_id)) {
                                 // gross..
-        display::render_twete(&twete.id, tweeter);
-        println!("");
+            display::render_twete(&twete.id, tweeter);
+            println!("");
+        } else {
+            println!("ERROR no tweet for remembered thread.");
+        }
     }
 }
