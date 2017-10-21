@@ -95,7 +95,7 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)) {
                     // get handles to reply to...
                     let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
-                    let mut ats: Vec<String> = twete.get_mentions().into_iter().map(|x| x.to_owned()).collect(); //std::collections::HashSet::new();
+                    let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
                     /*
                     for handle in twete.get_mentions() {
                         ats.insert(handle);

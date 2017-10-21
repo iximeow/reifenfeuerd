@@ -22,17 +22,19 @@ pub struct Tweet {
 }
 
 impl Tweet {
-    pub fn get_mentions(&self) -> Vec<&str> {
+    pub fn get_mentions(&self) -> Vec<String> {
         self.text.split(&[
             ',', '.', '/', ';', '\'',
             '[', ']', '\\', '~', '!',
-            '@', '#', '$', '%', '^',
+            '#', '$', '%', '^',
             '&', '*', '(', ')', '-',
             '=', '{', '}', '|', ':',
             '"', '<', '>', '?', '`',
             ' ' // forgot this initially. awkward.
         ][..])
-            .filter(|x| x.starts_with("@") && x.len() > 1)
+            .filter(|x| x.starts_with("@") && x.len() > 1 && x.chars().skip(1).all(|c| c != '@'))
+            // discard @, mentions are just the usernames.
+            .map(|handle| handle.chars().skip(1).collect())
             .collect()
     }
 
