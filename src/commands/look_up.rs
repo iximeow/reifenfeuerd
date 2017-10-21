@@ -23,6 +23,7 @@ pub static LOOK_UP_TWEET: Command = Command {
     exec: look_up_tweet
 };
 
+// TODO: make this parse a proper tweet id
 fn look_up_tweet(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
     if let Some(tweet) = tweeter.fetch_tweet(&line, &mut queryer) {
         println!("{:?}", tweet);
