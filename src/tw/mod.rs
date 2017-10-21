@@ -34,18 +34,17 @@ pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) 
                 let full_text = extended_tweet.get("full_text");
                 match full_text {
                     Some(text) => {
-                        return text.as_str().unwrap().to_string()
+                        text.as_str().unwrap().to_string()
                     }
                     None => {
-                        println!("Missing extended_tweet text. Full extended_tweet json: {:?}", full_text);
+                        panic!("Missing extended_tweet text. Full extended_tweet json: {:?}", full_text);
                     }
                 }
             },
             None => {
-                println!("Missing extended text. Full tweet json: {:?}", twete);
+                panic!("Missing extended text. Full tweet json: {:?}", twete);
             }
         }
-        panic!("API bug? changed?");
     } else {
         match twete.get("text") {
             Some(text) => text.as_str().unwrap().to_string(),
