@@ -18,9 +18,10 @@ pub static VIEW: Command = Command {
 fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
     // TODO handle this unwrap
     let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).unwrap();
-    display::render_twete(&twete.id, tweeter);
-    println!(" link: https://twitter.com/i/web/status/{}", twete.id);
+    let twete = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).unwrap().clone();
+    tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete.id.to_owned())));
+//    display::render_twete(&twete.id, tweeter);
+//    println!(" link: https://twitter.com/i/web/status/{}", twete.id);
 }
 
 pub static VIEW_THREAD: Command = Command {
@@ -29,22 +30,20 @@ pub static VIEW_THREAD: Command = Command {
     exec: view_tr
 };
 
-fn view_tr(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    // TODO handle this unwrap
+fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    let mut thread: Vec<TweetId> = Vec::new();
     let inner_twid = u64::from_str(&line).unwrap();
-    view_tr_inner(inner_twid, tweeter, queryer);
-}
-
-fn view_tr_inner(id: u64, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    let twete: tw::tweet::Tweet = tweeter.retrieve_tweet(&TweetId::Bare(id)).unwrap().to_owned();
-    if let Some(reply_id) = twete.reply_to_tweet.clone() {
-        if let Some(reply_internal_id) = tweeter.fetch_tweet(&reply_id, queryer).map(|x| x.internal_id).map(|x| x.to_owned()) {
-            view_tr_inner(reply_internal_id, tweeter, queryer);
-            println!("      |");
-            println!("      v");
-        }
+    let curr_id = TweetId::Bare(inner_twid);
+    let mut maybe_next_id = tweeter.retrieve_tweet(&curr_id).and_then(|x| x.reply_to_tweet.to_owned());
+    thread.push(curr_id);
+    while let Some(next_id) = maybe_next_id {
+        let curr_id = TweetId::Twitter(next_id);
+        maybe_next_id = tweeter.retrieve_tweet(&curr_id).and_then(|x| x.reply_to_tweet.to_owned());
+        thread.push(curr_id);
     }
-    display::render_twete(&twete.id, tweeter);
+
+    tweeter.display_info.recv(display::Infos::Thread(thread));
+//    display::render_twete(&twete.id, tweeter);
 //    println!("link: https://twitter.com/i/web/status/{}", twete.id);
 }
 

@@ -5,8 +5,6 @@ use tw::TweetId;
 
 use commands::Command;
 
-use std::str::FromStr;
-
 static FAV_TWEET_URL: &str = "https://api.twitter.com/1.1/favorites/create.json";
 static UNFAV_TWEET_URL: &str = "https://api.twitter.com/1.1/favorites/destroy.json";
 
@@ -21,12 +19,12 @@ fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 //    let inner_twid = u64::from_str(&line).unwrap();
     let maybe_id = TweetId::parse(line.to_owned());
     match maybe_id {
-        Some(twid) => {
+        Ok(twid) => {
             let twete = tweeter.retrieve_tweet(&twid).unwrap();
             queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id));
         }
-        None => {
-            println!("Invalid id: {}", line);
+        Err(e) => {
+            println!("Invalid id: {}", e);
         }
     }
 }
@@ -41,12 +39,12 @@ fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     // TODO handle this unwrap
     let maybe_id = TweetId::parse(line.to_owned());
     match maybe_id {
-        Some(twid) => {
+        Ok(twid) => {
             let twete = tweeter.retrieve_tweet(&twid).unwrap();
             queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id));
         }
-        None => {
-            println!("Invalid id: {}", line);
+        Err(e) => {
+            println!("Invalid id: {}", e);
         }
     }
 }

@@ -56,7 +56,7 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let id_str = text.trim();
         if reply.len() > 0 {
             if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)) {
+                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
                     let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle;
                     // TODO: definitely breaks if you change your handle right now
                     if handle == &tweeter.current_user.handle {
@@ -92,7 +92,8 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let id_str = text.trim();
         if reply.len() > 0 {
             if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)) {
+                // TODO: probably should just have Tweet impl Copy or something
+                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
                     // get handles to reply to...
                     let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                     let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
@@ -103,13 +104,12 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                     */
                     ats.remove_item(&author_handle);
                     ats.insert(0, author_handle);
-                    // no idea why i have to .to_owned() here --v-- what about twete.rt_tweet is a move?
-                    if let Some(rt_tweet) = twete.rt_tweet.to_owned().and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))) {
+                    if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
                         let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
                         ats.remove_item(&rt_author_handle);
                         ats.insert(1, rt_author_handle);
                     }
-                    if let Some(qt_tweet) = twete.quoted_tweet_id.to_owned().and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))) {
+                    if let Some(qt_tweet) = twete.quoted_tweet_id.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
                     //    let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
                     //    ats.remove_item(&qt_author_handle);
                     //    ats.insert(1, qt_author_handle);
@@ -145,7 +145,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let id_str = text.trim();
         if reply.len() > 0 {
             if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)) {
+                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
                     let substituted = ::url_encode(reply);
                     let attachment_url = ::url_encode(
                         &format!(
