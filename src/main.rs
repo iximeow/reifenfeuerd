@@ -28,6 +28,7 @@ use linestream::LineStream;
 
 mod tw;
 mod display;
+mod commands;
 
 //Change these values to your real Twitter API credentials
 static consumer_key: &str = "T879tHWDzd6LvKWdYVfbJL4Su";
@@ -258,7 +259,7 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
                                 if line == "reconnect\n".as_bytes() {
                                     return Some((ui_rx_orig.clone(), connect_twitter_stream()));
                                 } else {
-                                    handle_user_input(line, &mut tweeter, &mut queryer);
+                                    tweeter.handle_user_input(line, &mut queryer);
                                 }
                             }
                             None => std::process::exit(0)
@@ -268,11 +269,15 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
             },
             ui_rx_a.recv() -> user_input => match user_input {
                 Some(line) => {
-                    handle_user_input(line, &mut tweeter, &mut queryer);
+                    tweeter.handle_user_input(line, &mut queryer);
                 },
                 None => println!("UI thread hung up...")
             }
+            // and then we can introduce a channel that just sends a message every 100 ms or so
+            // that acts as a clock!
         }
+        // one day display_info should be distinct
+        display::paint(tweeter);
     }
 }
 
@@ -306,40 +311,6 @@ fn url_encode(s: &str) -> String {
         .replace("[", "%5b")
         .replace("\\", "%5c")
         .replace("]", "%5d")
-}
-
-mod commands;
-use commands::Command;
-
-// is there a nice way to make this accept commands: Iterable<&'a Command>? eg either a Vec or an
-// array or whatever?
-// (extra: WITHOUT having to build an iterator?)
-// ((extra 2: when compiled with -O3, how does `commands` iteration look? same as array?))
-fn parse_word_command<'a, 'b>(line: &'b str, commands: &[&'a Command]) -> Option<(&'b str, &'a Command)> {
-    for cmd in commands.into_iter() {
-        if cmd.params == 0 {
-            if line == cmd.keyword {
-                return Some(("", &cmd));
-            }
-        } else if line.starts_with(cmd.keyword) {
-            if line.find(" ").map(|x| x == cmd.keyword.len()).unwrap_or(false) {
-                // let inner_twid = u64::from_str(&linestr.split(" ").collect::<Vec<&str>>()[1]).unwrap();
-                return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
-            }
-        }
-    }
-    return None
-}
-
-fn handle_user_input(line: Vec<u8>, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
-    let command_bare = String::from_utf8(line).unwrap();
-    let command = command_bare.trim();
-    if let Some((line, cmd)) = parse_word_command(&command, commands::COMMANDS) {
-        (cmd.exec)(line.to_owned(), tweeter, &mut queryer);
-    } else {
-        println!("I don't know what {} means", command);
-    }
-    println!(""); // temporaryish because there's no visual distinction between output atm
 }
 
 fn connect_twitter_stream() -> chan::Receiver<Vec<u8>> {

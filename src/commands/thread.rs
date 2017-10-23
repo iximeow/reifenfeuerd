@@ -6,8 +6,6 @@ use tw::TweetId;
 
 use commands::Command;
 
-use std::str::FromStr;
-
 pub static FORGET_THREAD: Command = Command {
     keyword: "forget",
     params: 1,
@@ -34,13 +32,13 @@ fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer
         if name.len() > 0 {
             let maybe_id = TweetId::parse(line.to_owned());
             match maybe_id {
-                Some(twid) => {
+                Ok(twid) => {
                     let twete = tweeter.retrieve_tweet(&twid).unwrap().clone();
                     tweeter.set_thread(name.to_string(), twete.internal_id);
                     println!("Ok! Recorded {:?} as thread {}", twid, name);
                 }
-                None => {
-                    println!("Invalid id: {}", line);
+                Err(e) => {
+                    println!("Invalid id: {}", e);
                 }
             }
         }
@@ -55,12 +53,16 @@ pub static LIST_THREADS: Command = Command {
 
 fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     println!("Threads: ");
-    for k in tweeter.threads() {
+    let threads: Vec<String> = tweeter.threads().collect::<Vec<&String>>().into_iter().map(|x| x.to_owned()).collect::<Vec<String>>();
+    for k in threads {
         println!("Thread: {}", k);
-        let latest_inner_id = tweeter.latest_in_thread(k.to_owned()).unwrap();
-        if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(*latest_inner_id)) {
+        let latest_inner_id = tweeter.latest_in_thread(k.to_owned()).unwrap().to_owned();
+        // should be able to just directly render TweetId.. and threads should be Vec<TweetId>...
+        let twete_id_TEMP = tweeter.retrieve_tweet(&TweetId::Bare(latest_inner_id)).map(|x| x.id.to_owned());
+        if let Some(twete) = twete_id_TEMP {
                                 // gross..
-            display::render_twete(&twete.id, tweeter);
+            // and this ought to be a command to tweeter.display_info anyway...
+            display::render_twete(&TweetId::Twitter(twete), tweeter);
             println!("");
         } else {
             println!("ERROR no tweet for remembered thread.");

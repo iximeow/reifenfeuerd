@@ -8,6 +8,39 @@ use ::tw::TweetId;
 
 use std;
 
+pub enum Infos {
+    Tweet(TweetId),
+    Thread(Vec<TweetId>),
+    Event(tw::events::Event),
+    DM(String)
+}
+
+pub fn paint(tweeter: &mut ::tw::TwitterCache) {
+    println!("Painting, totally.");
+    println!("Statuses:");
+    {
+        let to_show = tweeter.display_info.log.iter().rev().take(4).collect::<Vec<&String>>().into_iter().rev();
+        for line in to_show {
+            println!("{}", line);
+        }
+    }
+
+    if let Some(elem) = tweeter.display_info.infos.pop() {
+        match elem {
+            Infos::Tweet(id) => render_twete(&id, tweeter),
+            Infos::Thread(ids) => {
+                println!("I'd show a thread if I knew how");
+            },
+            Infos::Event(e) => {
+                e.render(tweeter);
+            },
+            Infos::DM(msg) => {
+                println!("DM: {}", msg);
+            }
+        }
+    }
+}
+
 fn color_for(handle: &String) -> termion::color::Fg<&color::Color> {
     let color_map: Vec<&color::Color> = vec![
         &color::Blue,
@@ -30,23 +63,25 @@ fn color_for(handle: &String) -> termion::color::Fg<&color::Color> {
 }
 
 pub trait Render {
-    fn render(self, tweeter: &::tw::TwitterCache);
+    fn render(self, tweeter: &mut ::tw::TwitterCache);
 }
 
 impl Render for tw::events::Event {
-    fn render(self, tweeter: &::tw::TwitterCache) {
+    fn render(self, tweeter: &mut ::tw::TwitterCache) {
         match self {
             tw::events::Event::Quoted { user_id, twete_id } => {
                 println!("---------------------------------");
-                let user = tweeter.retrieve_user(&user_id).unwrap();
-                println!("  quoted_tweet    : {} (@{})", user.name, user.handle);
-                render_twete(&twete_id, tweeter);
+                {
+                    let user = tweeter.retrieve_user(&user_id).unwrap();
+                    println!("  quoted_tweet    : {} (@{})", user.name, user.handle);
+                }
+                render_twete(&TweetId::Twitter(twete_id), tweeter);
             }
             tw::events::Event::Deleted { user_id, twete_id } => {
-                if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle) {
-                    if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned())) {
+                if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle).map(|x| x.clone()) {
+                    if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned())).map(|x| x.clone()) {
                         println!("-------------DELETED------------------");
-                        render_twete(&twete_id, tweeter);
+                        render_twete(&TweetId::Twitter(twete_id), tweeter);
                         println!("-------------DELETED------------------");
                     } else {
                         println!("dunno what, but do know who: {} - {}", user_id, handle);
@@ -58,9 +93,11 @@ impl Render for tw::events::Event {
             },
             tw::events::Event::RT_RT { user_id, twete_id } => {
                 println!("---------------------------------");
+                {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("  +rt_rt    : {} (@{})", user.name, user.handle);
-                render_twete(&twete_id, tweeter);
+                }
+                render_twete(&TweetId::Twitter(twete_id), tweeter);
             },
             tw::events::Event::Fav_RT { user_id, twete_id } => {
                 println!("---------------------------------");
@@ -69,19 +106,23 @@ impl Render for tw::events::Event {
                 } else {
                     println!("  +rt_fav but don't know who {} is", user_id);
                 }
-                render_twete(&twete_id, tweeter);
+                render_twete(&TweetId::Twitter(twete_id), tweeter);
             },
             tw::events::Event::Fav { user_id, twete_id } => {
                 println!("---------------------------------");
+                {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("{}  +fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset));
-                render_twete(&twete_id, tweeter);
+                }
+                render_twete(&TweetId::Twitter(twete_id), tweeter);
             },
             tw::events::Event::Unfav { user_id, twete_id } => {
                 println!("---------------------------------");
+                {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 println!("{}  -fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset));
-                render_twete(&twete_id, tweeter);
+                }
+                render_twete(&TweetId::Twitter(twete_id), tweeter);
             },
             tw::events::Event::Followed { user_id } => {
                 println!("---------------------------------");
@@ -102,22 +143,22 @@ impl Render for tw::events::Event {
     }
 }
 
-pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
+pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) {
     let id_color = color::Fg(color::Rgb(180, 80, 40));
-    let maybe_twete = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned()));
+    let maybe_twete = tweeter.retrieve_tweet(twete_id).map(|x| x.clone());
     if maybe_twete.is_none() {
-        println!("No such tweet: {}", twete_id);
+        println!("No such tweet: {:?}", twete_id);
         return;
     }
     let twete = maybe_twete.unwrap();
     // if we got the tweet, the API gave us the user too
-    let user = tweeter.retrieve_user(&twete.author_id).unwrap();
+    let user = tweeter.retrieve_user(&twete.author_id).map(|x| x.clone()).unwrap();
     match twete.rt_tweet {
         Some(ref rt_id) => {
             // same for a retweet
-            let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap();
+            let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap().clone();
             // and its author
-            let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap();
+            let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
             println!("{}  id:{} (rt_id:{}){}{}",
                 id_color, rt.internal_id, twete.internal_id,
                 rt.reply_to_tweet.clone()
@@ -156,8 +197,9 @@ pub fn render_twete(twete_id: &String, tweeter: &tw::TwitterCache) {
     println!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      "));
 
     if let Some(ref qt_id) = twete.quoted_tweet_id {
-        if let Some(ref qt) = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())) {
-            let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap();
+        let maybe_qt = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())).map(|x| x.to_owned());
+        if let Some(qt) = maybe_qt {
+            let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap().clone();
             println!("{}    id:{}{}{}",
                 id_color, qt.internal_id,
                 qt.reply_to_tweet.clone()

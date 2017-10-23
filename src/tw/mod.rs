@@ -2,6 +2,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
+use std::error::Error;
 extern crate chrono;
 
 use self::chrono::prelude::*;
@@ -101,7 +102,9 @@ pub struct TwitterCache {
     #[serde(skip)]
     pub current_user: User,
     #[serde(skip)]
-    id_conversions: IdConversions
+    id_conversions: IdConversions,
+    #[serde(skip)]
+    pub display_info: DisplayInfo
 }
 
 // Internally, a monotonically increasin i64 is always the id used.
@@ -160,47 +163,31 @@ mod tests {
 }
 
 impl TweetId {
-    pub fn parse(id_str: String) -> Option<TweetId> {
-        // ...
+    pub fn parse(id_str: String) -> Result<TweetId, String> {
+        // TODO: figure out how to return a Result<TweetId, <.. the result types ..>>
         if id_str.starts_with("twitter:") {
-            Some(TweetId::Twitter(id_str.chars().skip("twitter:".len()).collect()))
+            Ok(TweetId::Twitter(id_str.chars().skip("twitter:".len()).collect()))
         } else if id_str.starts_with(":") {
             let rest = id_str.chars().skip(1);
-            if rest.clone().all(|x| x.is_digit(10)) {
-                match u64::from_str(&rest.collect::<String>()) {
-                    Ok(num) => Some(TweetId::Bare(num)),
-                    Err(e) => {
-                        println!("Invalid id: {} - {}", id_str, e);
-                        None
-                    }
-                }
-            } else {
-                None
-            }
+            u64::from_str(&rest.collect::<String>())
+                .map(TweetId::Bare)
+                .map_err(|err| err.description().to_string())
         } else if id_str.find(":") == Some(8) {
             let strings: Vec<&str> = id_str.split(":").collect();
-            if strings.len() == 2 {
-                match (strings[0].chars().all(|x| x.is_digit(10)), u64::from_str(strings[1])) {
-                    (true, Ok(num)) => Some(TweetId::Dated(strings[0].to_owned(), num)),
-                    _ => {
-                        println!("Invalid format.");
-                        None
-                    }
-                }
+            if strings.len() == 2 && strings[0].chars().all(|x| x.is_digit(10)) {
+                u64::from_str(strings[1])
+                    .map(|id| TweetId::Dated(strings[0].to_owned(), id))
+                    .map_err(|err| err.description().to_string())
             } else {
-                None
+                Err("Invalid format, date and id must be all numbers".to_string())
             }
         } else if id_str.chars().all(|x| x.is_digit(10)) {
             // today
-            match u64::from_str(&id_str) {
-                Ok(num) => Some(TweetId::Today(num)),
-                Err(e) => {
-                    println!("Invalid id: {} - {}", id_str, e);
-                    None
-                }
-            }
+            u64::from_str(&id_str)
+                .map(TweetId::Today)
+                .map_err(|err| err.description().to_string())
         } else {
-            None
+            Err(format!("Unrecognized id string: {}", id_str))
         }
     }
 }
@@ -211,7 +198,10 @@ impl IdConversions {
     //
     // except in the TweetId::Twitter case we TweetId -> Option<Tweet> -> Option<u64> ... to ->
     // Option<Tweet> in the future?
-    fn to_inner_id(&self, tweeter: &TwitterCache, twid: TweetId) -> Option<u64> {
+    //                          // WHY must we take mutable borrow of TwitterCache here, you ask?
+    //                          // well, because it contains display_info, and retrieve_tweet can
+    //                          // end up logging, for now!
+    fn to_inner_id(&self, tweeter: &mut TwitterCache, twid: TweetId) -> Option<u64> {
         match twid {
             TweetId::Today(num) => {
                 let first_for_today: u64 = 0;
@@ -225,6 +215,54 @@ impl IdConversions {
             twid @ TweetId::Twitter(_) => tweeter.retrieve_tweet(&twid).map(|x| x.internal_id)
         }
     }
+}
+
+pub struct DisplayInfo {
+    pub log: Vec<String>,
+    pub infos: Vec<display::Infos>
+}
+
+impl Default for DisplayInfo {
+    fn default() -> Self {
+        DisplayInfo {
+            log: Vec::new(),
+            infos: Vec::new()
+        }
+    }
+}
+
+impl DisplayInfo {
+    fn status(&mut self, stat: String) {
+        self.log.push(stat);
+    }
+
+    pub fn recv(&mut self, info: display::Infos) {
+        self.infos.push(info);
+    }
+}
+
+use commands::Command;
+use Queryer;
+
+// TODO:
+// is there a nice way to make this accept commands: Iterable<&'a Command>? eg either a Vec or an
+// array or whatever?
+// (extra: WITHOUT having to build an iterator?)
+// ((extra 2: when compiled with -O3, how does `commands` iteration look? same as array?))
+fn parse_word_command<'a, 'b>(line: &'b str, commands: &[&'a Command]) -> Option<(&'b str, &'a Command)> {
+    for cmd in commands.into_iter() {
+        if cmd.params == 0 {
+            if line == cmd.keyword {
+                return Some(("", &cmd));
+            }
+        } else if line.starts_with(cmd.keyword) {
+            if line.find(" ").map(|x| x == cmd.keyword.len()).unwrap_or(false) {
+                // let inner_twid = u64::from_str(&linestr.split(" ").collect::<Vec<&str>>()[1]).unwrap();
+                return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
+            }
+        }
+    }
+    return None
 }
 
 impl TwitterCache {
@@ -246,9 +284,24 @@ impl TwitterCache {
             caching_permitted: true,
             current_user: User::default(),
             threads: HashMap::new(),
-            id_conversions: IdConversions::default()
+            id_conversions: IdConversions::default(),
+            display_info: DisplayInfo::default()
         }
     }
+
+    // TODO: pull out the "Cache" part of TwitterCache, it can be serialized/deserialized - the
+    // rest of the history is just for the running instance..
+    pub fn handle_user_input(&mut self, line: Vec<u8>, mut queryer: &mut Queryer) {
+        let command_bare = String::from_utf8(line).unwrap();
+        let command = command_bare.trim();
+        if let Some((line, cmd)) = parse_word_command(&command, ::commands::COMMANDS) {
+            (cmd.exec)(line.to_owned(), self, &mut queryer);
+        } else {
+            self.display_info.status(format!("I don't know what {} means", command).to_string());
+        }
+//        println!(""); // temporaryish because there's no visual distinction between output atm
+    }
+
     fn new_without_caching() -> TwitterCache {
         let mut cache = TwitterCache::new();
         cache.caching_permitted = false;
@@ -327,19 +380,22 @@ impl TwitterCache {
                         }
                         Err(e) => {
                             // TODO! should be able to un-frick profile after startup.
-                            println!("Error reading profile, profile caching disabled... {}", e);
-                            TwitterCache::new_without_caching()
+                            let mut cache = TwitterCache::new_without_caching();
+                            cache.display_info.status(format!("Error reading profile, profile caching disabled... {}", e));
+                            cache
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Error reading cached profile: {}. Profile caching disabled.", e);
-                    TwitterCache::new_without_caching()
+                    let mut cache = TwitterCache::new_without_caching();
+                    cache.display_info.status(format!("Error reading cached profile: {}. Profile caching disabled.", e));
+                    cache
                 }
             }
         } else {
-            println!("Hello! First time setup?");
-            TwitterCache::new()
+            let mut cache = TwitterCache::new();
+            cache.display_info.status(format!("Hello! First time setup?"));
+            cache
         }
     }
     pub fn cache_api_tweet(&mut self, json: serde_json::Value) {
@@ -421,19 +477,22 @@ impl TwitterCache {
             /* nothing else to care about now, i think? */
         }
     }
-    pub fn retrieve_tweet(&self, tweet_id: &TweetId) -> Option<&Tweet> {
+    pub fn retrieve_tweet(&mut self, tweet_id: &TweetId) -> Option<&Tweet> {
         match tweet_id {
             &TweetId::Bare(ref id) => {
-                self.id_conversions.id_to_tweet_id.get(id)
-                    .and_then(|x| self.tweets.get(x))
+                let maybe_tweet_id = self.id_conversions.id_to_tweet_id.get(id);
+                match maybe_tweet_id {
+                    Some(id) => self.tweets.get(id),
+                    None => None
+                }
             },
             &TweetId::Today(ref id) => {
                 let inner_id = self.id_conversions.id_to_tweet_id.get(id);
-                panic!("Retrieving tweets with dated IDs is not yet supported.");
+                self.display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
                 None
             },
             &TweetId::Dated(ref date, ref id) => {
-                panic!("Retrieving tweets with dated IDs is not yet supported.");
+                self.display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
                 None
             },
             &TweetId::Twitter(ref id) => self.tweets.get(id)
@@ -446,7 +505,7 @@ impl TwitterCache {
         if !self.tweets.contains_key(tweet_id) {
             match self.look_up_tweet(tweet_id, &mut queryer) {
                 Some(json) => self.cache_api_tweet(json),
-                None => println!("Unable to retrieve tweet {}", tweet_id)
+                None => self.display_info.status(format!("Unable to retrieve tweet {}", tweet_id))
             };
         }
         self.tweets.get(tweet_id)
@@ -456,8 +515,8 @@ impl TwitterCache {
             let maybe_parsed = self.look_up_user(user_id, &mut queryer).and_then(|x| User::from_json(x));
             match maybe_parsed {
                 Some(tw) => self.cache_user(tw),
-                None => println!("Unable to retrieve user {}", user_id)
-            };
+                None => self.display_info.status(format!("Unable to retrieve user {}", user_id))
+            }
         }
         self.users.get(user_id)
     }
@@ -567,18 +626,22 @@ fn handle_twitter_event(
     mut queryer: &mut ::Queryer) {
     tweeter.cache_api_event(structure.clone(), &mut queryer);
     if let Some(event) = events::Event::from_json(structure) {
-        event.render(&tweeter);
-    };
+        tweeter.display_info.recv(display::Infos::Event(event));
+    } else {
+        // ought to handle the None case...
+    }
 }
 
 fn handle_twitter_delete(
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
-    events::Event::Deleted {
-        user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
-        twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
-    }.render(tweeter);
+    tweeter.display_info.recv(display::Infos::Event(
+        events::Event::Deleted {
+            user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
+            twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
+        }
+    ));
 }
 
 fn handle_twitter_twete(
@@ -587,16 +650,16 @@ fn handle_twitter_twete(
     _queryer: &mut ::Queryer) {
     let twete_id = structure["id_str"].as_str().unwrap().to_string();
     tweeter.cache_api_tweet(serde_json::Value::Object(structure));
-    display::render_twete(&twete_id, tweeter);
+    tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete_id)));
+    // display::render_twete(&twete_id, tweeter);
 }
 
 fn handle_twitter_dm(
     structure: serde_json::Map<String, serde_json::Value>,
-    _tweeter: &mut TwitterCache,
+    tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
     // show DM
-    println!("{}", structure["direct_message"]["text"].as_str().unwrap());
-    println!("Unknown struture {:?}", structure);
+    tweeter.display_info.recv(display::Infos::DM(structure["direct_message"]["text"].as_str().unwrap().to_string()));
 }
 
 fn handle_twitter_welcome(
@@ -615,9 +678,9 @@ fn handle_twitter_welcome(
             handle: my_name.to_owned(),
             name: my_name.to_owned()
         };
-        println!("You are {}", tweeter.current_user.handle);
+        tweeter.display_info.status(format!("You are {}", tweeter.current_user.handle))
     } else {
-        println!("Unable to make API call to figure out who you are...");
+        tweeter.display_info.status("Unable to make API call to figure out who you are...".to_string());
     }
     let followers = tweeter.get_followers(queryer).unwrap();
     let id_arr: Vec<String> = followers["ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
@@ -642,7 +705,7 @@ pub fn handle_message(
             } else if objmap.contains_key("direct_message") {
                 handle_twitter_dm(objmap, tweeter, queryer);
             }
-            println!("");
+//            self.display_info.status("");
         },
         _ => ()
     };
