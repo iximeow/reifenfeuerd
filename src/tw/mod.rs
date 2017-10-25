@@ -135,7 +135,7 @@ impl Default for IdConversions {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TweetId {
     Today(u64),         // just a number
     Dated(String, u64), // 20171002:number
