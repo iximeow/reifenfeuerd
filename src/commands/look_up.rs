@@ -1,4 +1,6 @@
 use tw;
+use tw::TweetId;
+use display;
 use ::Queryer;
 
 use commands::Command;
@@ -25,9 +27,16 @@ pub static LOOK_UP_TWEET: Command = Command {
 
 // TODO: make this parse a proper tweet id
 fn look_up_tweet(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
-    if let Some(tweet) = tweeter.fetch_tweet(&line, &mut queryer) {
-        println!("{:?}", tweet);
-    } else {
-//            println!("Couldn't retrieve {}", tweetid);
+    match TweetId::parse(line) {
+        Ok(twid) => {
+            if let Some(tweet) = tweeter.fetch_tweet(&twid, &mut queryer).map(|x| x.clone()) {
+                tweeter.display_info.recv(display::Infos::Tweet(twid));
+            } else {
+                tweeter.display_info.status(format!("Couldn't retrieve {:?}", twid));
+            }
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Invalid id {:?}", e));
+        }
     }
 }

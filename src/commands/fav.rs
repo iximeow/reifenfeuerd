@@ -15,13 +15,14 @@ pub static UNFAV: Command = Command {
 };
 
 fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    // TODO handle this unwrap
-//    let inner_twid = u64::from_str(&line).unwrap();
     let maybe_id = TweetId::parse(line.to_owned());
     match maybe_id {
         Ok(twid) => {
-            let twete = tweeter.retrieve_tweet(&twid).unwrap();
-            queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id));
+            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id));
+            } else {
+                tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
+            }
         }
         Err(e) => {
             println!("Invalid id: {}", e);
@@ -36,12 +37,15 @@ pub static FAV: Command = Command {
 };
 
 fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    // TODO handle this unwrap
     let maybe_id = TweetId::parse(line.to_owned());
     match maybe_id {
         Ok(twid) => {
-            let twete = tweeter.retrieve_tweet(&twid).unwrap();
-            queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id));
+            // tweeter.to_twitter_tweet_id(twid)...
+            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id));
+            } else {
+                tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
+            }
         }
         Err(e) => {
             println!("Invalid id: {}", e);

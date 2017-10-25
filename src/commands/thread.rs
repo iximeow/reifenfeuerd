@@ -33,12 +33,15 @@ fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer
             let maybe_id = TweetId::parse(line.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    let twete = tweeter.retrieve_tweet(&twid).unwrap().clone();
-                    tweeter.set_thread(name.to_string(), twete.internal_id);
-                    println!("Ok! Recorded {:?} as thread {}", twid, name);
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) {
+                        tweeter.set_thread(name.to_string(), twete.internal_id);
+                        tweeter.display_info.status(format!("Ok! Recorded {:?} as thread {}", twid, name));
+                    } else {
+                        tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
+                    }
                 }
                 Err(e) => {
-                    println!("Invalid id: {}", e);
+                    tweeter.display_info.status(format!("Invalid id: {}", e));
                 }
             }
         }

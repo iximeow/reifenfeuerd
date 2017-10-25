@@ -232,7 +232,7 @@ impl Default for DisplayInfo {
 }
 
 impl DisplayInfo {
-    fn status(&mut self, stat: String) {
+    pub fn status(&mut self, stat: String) {
         self.log.push(stat);
     }
 
@@ -501,14 +501,30 @@ impl TwitterCache {
     pub fn retrieve_user(&self, user_id: &String) -> Option<&User> {
         self.users.get(user_id)
     }
-    pub fn fetch_tweet(&mut self, tweet_id: &String, mut queryer: &mut ::Queryer) -> Option<&Tweet> {
-        if !self.tweets.contains_key(tweet_id) {
-            match self.look_up_tweet(tweet_id, &mut queryer) {
-                Some(json) => self.cache_api_tweet(json),
-                None => self.display_info.status(format!("Unable to retrieve tweet {}", tweet_id))
-            };
+    pub fn fetch_tweet(&mut self, tweet_id: &TweetId, mut queryer: &mut ::Queryer) -> Option<&Tweet> {
+        match tweet_id {
+            &TweetId::Bare(ref id) => {
+                // we can do nothing but just try to get it
+                self.retrieve_tweet(tweet_id)
+            }
+            &TweetId::Today(ref id) => {
+                // we can do nothing but just try to get it
+                self.retrieve_tweet(tweet_id)
+            },
+            &TweetId::Dated(ref date, ref id) => {
+                // we can do nothing but just try to get it
+                self.retrieve_tweet(tweet_id)
+            },
+            &TweetId::Twitter(ref id) => {
+                if !self.tweets.contains_key(id) {
+                    match self.look_up_tweet(id, &mut queryer) {
+                        Some(json) => self.cache_api_tweet(json),
+                        None => self.display_info.status(format!("Unable to retrieve tweet {}", id))
+                    };
+                }
+                self.retrieve_tweet(tweet_id)
+            }
         }
-        self.tweets.get(tweet_id)
     }
     pub fn fetch_user(&mut self, user_id: &String, mut queryer: &mut ::Queryer) -> Option<&User> {
         if !self.users.contains_key(user_id) {
