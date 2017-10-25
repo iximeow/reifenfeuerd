@@ -1,5 +1,6 @@
 extern crate serde_json;
 
+#[derive(Clone)]
 pub enum Event {
     Deleted { user_id: String, twete_id: String },
     RT_RT { user_id: String, twete_id: String },
