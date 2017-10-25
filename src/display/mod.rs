@@ -197,84 +197,85 @@ impl Render for tw::events::Event {
 pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<String> {
     let mut result = Vec::new();
     let id_color = color::Fg(color::Rgb(180, 80, 40));
-    let maybe_twete = tweeter.retrieve_tweet(twete_id).map(|x| x.clone());
-    if maybe_twete.is_none() {
-        result.push(format!("No such tweet: {:?}", twete_id));
-        return result;
-    }
-    let twete = maybe_twete.unwrap();
-    // if we got the tweet, the API gave us the user too
-    let user = tweeter.retrieve_user(&twete.author_id).map(|x| x.clone()).unwrap();
-    match twete.rt_tweet {
-        Some(ref rt_id) => {
-            // same for a retweet
-            let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap().clone();
-            // and its author
-            let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
-            result.push(format!("{}  id:{} (rt_id:{}){}{}",
-                id_color, rt.internal_id, twete.internal_id,
-                rt.reply_to_tweet.clone()
-                    .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                        .unwrap_or(format!(" reply_to:twitter::{}", id))
-                    )
-                    .unwrap_or("".to_string()),
-                color::Fg(color::Reset)
-            ));
-            result.push(format!("  {}{}{} ({}@{}{}) via {}{}{} ({}@{}{}) RT:",
-                color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset),
-                color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset),
-                color_for(&user.handle), user.name, color::Fg(color::Reset),
-                color_for(&user.handle), user.handle, color::Fg(color::Reset)
-            ));
-        }
+    match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
+        Some(twete) => {
+            // if we got the tweet, the API gave us the user too
+            let user = tweeter.retrieve_user(&twete.author_id).map(|x| x.clone()).unwrap();
+            match twete.rt_tweet {
+                Some(ref rt_id) => {
+                    // same for a retweet
+                    let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap().clone();
+                    // and its author
+                    let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
+                    result.push(format!("{}  id:{} (rt_id:{}){}{}",
+                        id_color, rt.internal_id, twete.internal_id,
+                        rt.reply_to_tweet.clone()
+                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
+                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            )
+                            .unwrap_or("".to_string()),
+                        color::Fg(color::Reset)
+                    ));
+                    result.push(format!("  {}{}{} ({}@{}{}) via {}{}{} ({}@{}{}) RT:",
+                        color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset),
+                        color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset),
+                        color_for(&user.handle), user.name, color::Fg(color::Reset),
+                        color_for(&user.handle), user.handle, color::Fg(color::Reset)
+                    ));
+                }
+                None => {
+                    result.push(format!("{}  id:{}{}{}",
+                        id_color, twete.internal_id,
+                        twete.reply_to_tweet.clone()
+                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
+                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            )
+                            .unwrap_or("".to_string()),
+                        color::Fg(color::Reset)
+                    ));
+                    result.push(format!("  {}{}{} ({}@{}{})",
+                        color_for(&user.handle), user.name, color::Fg(color::Reset),
+                        color_for(&user.handle), user.handle, color::Fg(color::Reset)
+                    ));
+                }
+            }
+
+            result.extend(
+                format!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      ")).split("\n").map(|x| x.to_owned())
+            );
+
+            if let Some(ref qt_id) = twete.quoted_tweet_id {
+                let maybe_qt = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())).map(|x| x.to_owned());
+                if let Some(qt) = maybe_qt {
+                    let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap().clone();
+                    result.push(format!("{}    id:{}{}{}",
+                        id_color, qt.internal_id,
+                        qt.reply_to_tweet.clone()
+                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
+                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
+                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            )
+                            .unwrap_or("".to_string()),
+                        color::Fg(color::Reset)
+                    ));
+                    result.push(format!(
+                        "    {}{}{} ({}@{}{})",
+                        color_for(&qt_author.handle), qt_author.name, color::Fg(color::Reset),
+                        color_for(&qt_author.handle), qt_author.handle, color::Fg(color::Reset)
+                    ));
+                    result.push(format!(
+                        "        {}",
+                        qt.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n        ")
+                    ));
+                } else {
+                    result.push(format!("    << don't have quoted tweet! >>"));
+                }
+            }
+        },
         None => {
-            result.push(format!("{}  id:{}{}{}",
-                id_color, twete.internal_id,
-                twete.reply_to_tweet.clone()
-                    .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                        .unwrap_or(format!(" reply_to:twitter::{}", id))
-                    )
-                    .unwrap_or("".to_string()),
-                color::Fg(color::Reset)
-            ));
-            result.push(format!("  {}{}{} ({}@{}{})",
-                color_for(&user.handle), user.name, color::Fg(color::Reset),
-                color_for(&user.handle), user.handle, color::Fg(color::Reset)
-            ));
-        }
-    }
-
-    result.extend(
-        format!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      ")).split("\n").map(|x| x.to_owned())
-    );
-
-    if let Some(ref qt_id) = twete.quoted_tweet_id {
-        let maybe_qt = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())).map(|x| x.to_owned());
-        if let Some(qt) = maybe_qt {
-            let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap().clone();
-            result.push(format!("{}    id:{}{}{}",
-                id_color, qt.internal_id,
-                qt.reply_to_tweet.clone()
-                    .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                        .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                        .unwrap_or(format!(" reply_to:twitter::{}", id))
-                    )
-                    .unwrap_or("".to_string()),
-                color::Fg(color::Reset)
-            ));
-            result.push(format!(
-                "    {}{}{} ({}@{}{})",
-                color_for(&qt_author.handle), qt_author.name, color::Fg(color::Reset),
-                color_for(&qt_author.handle), qt_author.handle, color::Fg(color::Reset)
-            ));
-            result.push(format!(
-                "        {}",
-                qt.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n        ")
-            ));
-        } else {
-            result.push(format!("    << don't have quoted tweet! >>"));
+            result.push(format!("No such tweet: {:?}", twete_id));
         }
     }
 

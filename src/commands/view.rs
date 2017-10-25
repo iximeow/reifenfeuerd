@@ -16,10 +16,18 @@ pub static VIEW: Command = Command {
 };
 
 fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
-    // TODO handle this unwrap
-    let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).unwrap().clone();
-    tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete.id.to_owned())));
+    match TweetId::parse(line) {
+        Ok(twid) => {
+            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) {
+                tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete.id.to_owned())));
+            } else {
+                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+            }
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Invalid id {:?}", e));
+        }
+    }
 //    display::render_twete(&twete.id, tweeter);
 //    println!(" link: https://twitter.com/i/web/status/{}", twete.id);
 }
@@ -32,14 +40,23 @@ pub static VIEW_THREAD: Command = Command {
 
 fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let mut thread: Vec<TweetId> = Vec::new();
-    let inner_twid = u64::from_str(&line).unwrap();
-    let curr_id = TweetId::Bare(inner_twid);
-    let mut maybe_next_id = tweeter.retrieve_tweet(&curr_id).and_then(|x| x.reply_to_tweet.to_owned());
-    thread.push(curr_id);
-    while let Some(next_id) = maybe_next_id {
-        let curr_id = TweetId::Twitter(next_id);
-        maybe_next_id = tweeter.retrieve_tweet(&curr_id).and_then(|x| x.reply_to_tweet.to_owned());
-        thread.push(curr_id);
+    let maybe_curr_id = TweetId::parse(line);
+    match maybe_curr_id {
+        Ok(curr_id) => {
+            let first_twete = tweeter.fetch_tweet(&curr_id, queryer).map(|x| x.to_owned());
+            if first_twete.is_some() {
+                thread.push(curr_id);
+            }
+            let mut maybe_next_id = first_twete.and_then(|x| x.reply_to_tweet.to_owned());
+            while let Some(next_id) = maybe_next_id {
+                let curr_id = TweetId::Twitter(next_id);
+                maybe_next_id = tweeter.fetch_tweet(&curr_id, queryer).and_then(|x| x.reply_to_tweet.to_owned());
+                thread.push(curr_id);
+            }
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Invalid id {:?}", e));
+        }
     }
 
     tweeter.display_info.recv(display::Infos::Thread(thread));

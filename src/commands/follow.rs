@@ -13,8 +13,7 @@ pub static UNFOLLOW: Command = Command {
 };
 
 fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    // TODO handle this unwrap
-    let screen_name = line.trim(); //u64::from_str(&line).unwrap();
+    let screen_name = line.trim();
     queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name));
 }
 
@@ -25,7 +24,6 @@ pub static FOLLOW: Command = Command {
 };
 
 fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    // TODO handle this unwrap
-    let screen_name = line.trim(); //u64::from_str(&line).unwrap();
+    let screen_name = line.trim();
     println!("fl resp: {:?}", queryer.do_api_post(&format!("{}?screen_name={}", UNFOLLOW_URL, screen_name)));
 }

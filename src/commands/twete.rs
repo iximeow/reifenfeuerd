@@ -18,9 +18,19 @@ pub static DEL: Command = Command {
 };
 
 fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).unwrap();
-    queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twete.id));
+    match TweetId::parse(line.clone()) {
+        Ok(twid) => {
+            // TODO this really converts twid to a TweetId::Twitter
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
+                queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id));
+            } else {
+                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+            }
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Invalid id: {:?}", line));
+        }
+    }
 }
 
 pub static TWETE: Command = Command {
@@ -55,19 +65,23 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let reply = reply_bare.trim();
         let id_str = text.trim();
         if reply.len() > 0 {
-            if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
-                    let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle;
-                    // TODO: definitely breaks if you change your handle right now
-                    if handle == &tweeter.current_user.handle {
-                        let substituted = ::url_encode(reply);
-                        queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
-                    } else {
-                        println!("you can only thread your own tweets");
-                        // ask if it should .@ instead?
+            let maybe_id = TweetId::parse(id_str.to_owned());
+            match maybe_id {
+                Ok(twid) => {
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                        let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle;
+                        // TODO: definitely breaks if you change your handle right now
+                        if handle == &tweeter.current_user.handle {
+                            let substituted = ::url_encode(reply);
+                            queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                        } else {
+                            println!("you can only thread your own tweets");
+                            // ask if it should .@ instead?
+                        }
                     }
-                    let substituted = ::url_encode(reply);
-                    queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                }
+                Err(e) => {
+                    tweeter.display_info.status(format!("Invalid id: {}", e));
                 }
             }
         } else {
@@ -91,36 +105,43 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let reply = reply_bare.trim();
         let id_str = text.trim();
         if reply.len() > 0 {
-            if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                // TODO: probably should just have Tweet impl Copy or something
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
-                    // get handles to reply to...
-                    let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
-                    let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
-                    /*
-                    for handle in twete.get_mentions() {
-                        ats.insert(handle);
+            let maybe_id = TweetId::parse(id_str.to_owned());
+            match maybe_id {
+                Ok(twid) => {
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                        // get handles to reply to...
+                        let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
+                        let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
+                        /*
+                        for handle in twete.get_mentions() {
+                            ats.insert(handle);
+                        }
+                        */
+                        ats.remove_item(&author_handle);
+                        ats.insert(0, author_handle);
+                        if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
+                            let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
+                            ats.remove_item(&rt_author_handle);
+                            ats.insert(1, rt_author_handle);
+                        }
+                        if let Some(qt_tweet) = twete.quoted_tweet_id.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
+                        //    let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
+                        //    ats.remove_item(&qt_author_handle);
+                        //    ats.insert(1, qt_author_handle);
+                        }
+                        //let ats_vec: Vec<&str> = ats.into_iter().collect();
+                        //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
+                        let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
+                        let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
+                        let substituted = ::url_encode(&full_reply);
+    //                        println!("{}", (&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)));
+                        queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                    } else {
+                        tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
                     }
-                    */
-                    ats.remove_item(&author_handle);
-                    ats.insert(0, author_handle);
-                    if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
-                        let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
-                        ats.remove_item(&rt_author_handle);
-                        ats.insert(1, rt_author_handle);
-                    }
-                    if let Some(qt_tweet) = twete.quoted_tweet_id.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
-                    //    let qt_author_handle = tweeter.retrieve_user(&qt_tweet.author_id).unwrap().handle.to_owned();
-                    //    ats.remove_item(&qt_author_handle);
-                    //    ats.insert(1, qt_author_handle);
-                    }
-                    //let ats_vec: Vec<&str> = ats.into_iter().collect();
-                    //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
-                    let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
-                    let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
-                    let substituted = ::url_encode(&full_reply);
-//                        println!("{}", (&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)));
-                    queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                },
+                Err(e) => {
+                    tweeter.display_info.status(format!("Cannot parse input: {:?}", id_str));
                 }
             }
         } else {
@@ -144,24 +165,32 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         let reply = reply_bare.trim();
         let id_str = text.trim();
         if reply.len() > 0 {
-            if let Some(inner_twid) = u64::from_str(&id_str).ok() {
-                if let Some(twete) = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).map(|x| x.clone()) {
-                    let substituted = ::url_encode(reply);
-                    let attachment_url = ::url_encode(
-                        &format!(
-                            "https://www.twitter.com/{}/status/{}",
-                            tweeter.retrieve_user(&twete.author_id).unwrap().handle,
-                            twete.id
-                        )
-                    );
-                    println!("{}", substituted);
-                    queryer.do_api_post(
-                        &format!("{}?status={}&attachment_url={}",
-                                 CREATE_TWEET_URL,
-                                 substituted,
-                                 attachment_url
-                        )
-                    );
+            let maybe_id = TweetId::parse(id_str.to_owned());
+            match maybe_id {
+                Ok(twid) => {
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                        let substituted = ::url_encode(reply);
+                        let attachment_url = ::url_encode(
+                            &format!(
+                                "https://www.twitter.com/{}/status/{}",
+                                tweeter.retrieve_user(&twete.author_id).unwrap().handle, // TODO: for now this is ok ish, if we got the tweet we have the author
+                                twete.id
+                            )
+                        );
+                        println!("{}", substituted);
+                        queryer.do_api_post(
+                            &format!("{}?status={}&attachment_url={}",
+                                     CREATE_TWEET_URL,
+                                     substituted,
+                                     attachment_url
+                            )
+                        );
+                    } else {
+                        tweeter.display_info.status(format!("No tweet found for id {:?}", twid));
+                    }
+                },
+                Err(e) => {
+                    tweeter.display_info.status(format!("Invalid id: {:?}", id_str));
                 }
             }
         } else {
@@ -179,8 +208,18 @@ pub static RETWETE: Command = Command {
 };
 
 fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    let inner_twid = u64::from_str(&line).unwrap();
-    let twete = tweeter.retrieve_tweet(&TweetId::Bare(inner_twid)).unwrap();
-    queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twete.id));
+    match TweetId::parse(line.clone()) {
+        Ok(twid) => {
+            // TODO this really converts twid to a TweetId::Twitter
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
+                queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id));
+            } else {
+                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+            }
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Invalid id: {:?}", line));
+        }
+    }
 }
 
