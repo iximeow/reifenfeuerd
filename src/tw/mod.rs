@@ -257,7 +257,6 @@ fn parse_word_command<'a, 'b>(line: &'b str, commands: &[&'a Command]) -> Option
             }
         } else if line.starts_with(cmd.keyword) {
             if line.find(" ").map(|x| x == cmd.keyword.len()).unwrap_or(false) {
-                // let inner_twid = u64::from_str(&linestr.split(" ").collect::<Vec<&str>>()[1]).unwrap();
                 return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
             }
         }
@@ -641,10 +640,13 @@ fn handle_twitter_event(
     tweeter: &mut TwitterCache,
     mut queryer: &mut ::Queryer) {
     tweeter.cache_api_event(structure.clone(), &mut queryer);
-    if let Some(event) = events::Event::from_json(structure) {
-        tweeter.display_info.recv(display::Infos::Event(event));
-    } else {
-        // ought to handle the None case...
+    match events::Event::from_json(structure) {
+        Ok(event) => {
+            tweeter.display_info.recv(display::Infos::Event(event));
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Unknown twitter json: {:?}", e));
+        }
     }
 }
 
