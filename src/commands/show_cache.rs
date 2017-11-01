@@ -9,23 +9,23 @@ pub static SHOW_CACHE: Command = Command {
     exec: show_cache
 };
 
-fn show_cache(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
-    println!("----* USERS *----");
+fn show_cache(_line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
+    tweeter.display_info.status("----* USERS *----".to_owned());
     for (uid, user) in &tweeter.users {
-        println!("User: {} -> {:?}", uid, user);
+        tweeter.display_info.status(format!("User: {} -> {:?}", uid, user));
     }
-    println!("----* TWEETS *----");
+    tweeter.display_info.status("----* TWEETS *----".to_owned());
     for (tid, tweet) in &tweeter.tweets {
-        println!("Tweet: {} -> {:?}", tid, tweet);
+        tweeter.display_info.status(format!("Tweet: {} -> {:?}", tid, tweet));
     }
-    println!("----* FOLLOWERS *----");
+    tweeter.display_info.status("----* FOLLOWERS *----".to_owned());
     for uid in &tweeter.followers.clone() {
-        let user_res = tweeter.fetch_user(uid, &mut queryer);
+        let user_res = tweeter.fetch_user(uid, &mut queryer).map(|x| x.clone());
         match user_res {
             Some(user) => {
-                println!("Follower: {} - {:?}", uid, user);
+                tweeter.display_info.status(format!("Follower: {} - {:?}", uid, user));
             }
-            None => { println!("  ..."); }
+            None => { tweeter.display_info.status("  ...".to_owned()); }
         }
     }
 }

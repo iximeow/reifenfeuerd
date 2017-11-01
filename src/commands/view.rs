@@ -5,8 +5,6 @@ use tw::TweetId;
 
 use commands::Command;
 
-use std::str::FromStr;
-
 use display;
 
 pub static VIEW: Command = Command {
@@ -19,7 +17,10 @@ fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
     match TweetId::parse(line) {
         Ok(twid) => {
             if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) {
-                tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete.id.to_owned())));
+                tweeter.display_info.recv(display::Infos::TweetWithContext(
+                    TweetId::Twitter(twete.id.to_owned()),
+                    format!("link: https://twitter.com/i/web/status/{}", twete.id)
+                ));
             } else {
                 tweeter.display_info.status(format!("No tweet for id {:?}", twid));
             }
@@ -28,8 +29,6 @@ fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
             tweeter.display_info.status(format!("Invalid id {:?}", e));
         }
     }
-//    display::render_twete(&twete.id, tweeter);
-//    println!(" link: https://twitter.com/i/web/status/{}", twete.id);
 }
 
 pub static VIEW_THREAD: Command = Command {
@@ -60,8 +59,6 @@ fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Query
     }
 
     tweeter.display_info.recv(display::Infos::Thread(thread));
-//    display::render_twete(&twete.id, tweeter);
-//    println!("link: https://twitter.com/i/web/status/{}", twete.id);
 }
 
 pub static VIEW_THREAD_FORWARD: Command = Command {
@@ -70,7 +67,7 @@ pub static VIEW_THREAD_FORWARD: Command = Command {
     exec: view_tr_forward
 };
 
-fn view_tr_forward(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn view_tr_forward(_line: String, _tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
     // first see if we have a thread for the tweet named
     // if we do not, we'll have to mimic a request like 
     // curl 'https://twitter.com/jojonila/status/914383908090691584' \

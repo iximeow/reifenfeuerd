@@ -5,8 +5,6 @@ use tw::TweetId;
 
 use commands::Command;
 
-use std::str::FromStr;
-
 static DEL_TWEET_URL: &str = "https://api.twitter.com/1.1/statuses/destroy";
 static RT_TWEET_URL: &str = "https://api.twitter.com/1.1/statuses/retweet";
 static CREATE_TWEET_URL: &str = "https://api.twitter.com/1.1/statuses/update.json";
@@ -22,13 +20,16 @@ fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id));
+                match queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id)) {
+                    Ok(_) => (),
+                    Err(e) => tweeter.display_info.status(e)
+                }
             } else {
                 tweeter.display_info.status(format!("No tweet for id {:?}", twid));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Invalid id: {:?}", line));
+            tweeter.display_info.status(format!("Invalid id: {:?} ({})", line, e));
         }
     }
 }
@@ -39,17 +40,19 @@ pub static TWETE: Command = Command {
     exec: twete
 };
 
-fn twete(line: String, _tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let text = line.trim();
     let substituted = ::url_encode(text);
-    println!("msg len: {}", text.len());
-    println!("excessively long? {}", text.len() > 140);
-    if text.len() > 140 {
-        queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted));
+    if text.len() <= 140 {
+        match queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted)) {
+            Ok(_) => (),
+            Err(e) => tweeter.display_info.status(e)
+        }
     } else {
-        queryer.do_api_post(&format!("{}?status={}&weighted_character_count=true", CREATE_TWEET_URL, substituted));
+        // TODO: this 140 is maybe sometimes 280.. :)
+        // and see if weighted_character_count still does things?
+        tweeter.display_info.status(format!("tweet is too long: {}/140 chars", text.len()));
     }
-//        println!("{}", &format!("{}?status={}", CREATE_TWEET_URL, substituted));
 }
 
 pub static THREAD: Command = Command {
@@ -69,13 +72,16 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
             match maybe_id {
                 Ok(twid) => {
                     if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
-                        let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle;
+                        let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                         // TODO: definitely breaks if you change your handle right now
                         if handle == &tweeter.current_user.handle {
                             let substituted = ::url_encode(reply);
-                            queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                            match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
+                                Ok(_) => (),
+                                Err(e) => tweeter.display_info.status(e)
+                            }
                         } else {
-                            println!("you can only thread your own tweets");
+                            tweeter.display_info.status("you can only thread your own tweets".to_owned());
                             // ask if it should .@ instead?
                         }
                     }
@@ -85,10 +91,10 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 }
             }
         } else {
-            println!("thread <id> your sik reply");
+            tweeter.display_info.status("thread <id> your sik reply".to_owned());
         }
     } else {
-        println!("thread <id> your sik reply");
+        tweeter.display_info.status("thread <id> your sik reply".to_owned());
     }
 }
 
@@ -129,21 +135,23 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
                         let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
                         let substituted = ::url_encode(&full_reply);
-    //                        println!("{}", (&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)));
-                        queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id));
+                        match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
+                            Ok(_) => (),
+                            Err(e) => tweeter.display_info.status(e)
+                        }
                     } else {
                         tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
                     }
                 },
                 Err(e) => {
-                    tweeter.display_info.status(format!("Cannot parse input: {:?}", id_str));
+                    tweeter.display_info.status(format!("Cannot parse input: {:?} ({})", id_str, e));
                 }
             }
         } else {
-            println!("rep <id> your sik reply");
+            tweeter.display_info.status("rep <id> your sik reply".to_owned());
         }
     } else {
-        println!("rep <id> your sik reply");
+        tweeter.display_info.status("rep <id> your sik reply".to_owned());
     }
 }
 
@@ -172,14 +180,16 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                                 twete.id
                             )
                         );
-                        println!("{}", substituted);
-                        queryer.do_api_post(
+                        match queryer.do_api_post(
                             &format!("{}?status={}&attachment_url={}",
                                      CREATE_TWEET_URL,
                                      substituted,
                                      attachment_url
                             )
-                        );
+                        ) {
+                            Ok(_) => (),
+                            Err(e) => tweeter.display_info.status(e)
+                        }
                     } else {
                         tweeter.display_info.status(format!("No tweet found for id {:?}", twid));
                     }
@@ -189,10 +199,10 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 }
             }
         } else {
-            println!("rep <id> your sik reply");
+            tweeter.display_info.status("rep <id> your sik reply".to_owned());
         }
     } else {
-        println!("rep <id> your sik reply");
+        tweeter.display_info.status("rep <id> your sik reply".to_owned());
     }
 }
 
@@ -207,7 +217,10 @@ fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) 
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id));
+                match queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id)) {
+                    Ok(_) => (),
+                    Err(e) => tweeter.display_info.status(e)
+                }
             } else {
                 tweeter.display_info.status(format!("No tweet for id {:?}", twid));
             }

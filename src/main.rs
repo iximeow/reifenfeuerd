@@ -55,10 +55,10 @@ pub struct Queryer {
 }
 
 impl Queryer {
-    fn do_api_get(&mut self, url: &str) -> Option<serde_json::Value> {
+    fn do_api_get(&mut self, url: &str) -> Result<serde_json::Value, String> {
         self.issue_request(signed_api_get(url))
     }
-    fn do_api_post(&mut self, url: &str) -> Option<serde_json::Value> {
+    fn do_api_post(&mut self, url: &str) -> Result<serde_json::Value, String> {
         self.issue_request(signed_api_post(url))
     }
     /*
@@ -66,7 +66,7 @@ impl Queryer {
         self.issue_request(signed_web_get(url))
     }*/
     // TODO: make this return the status as well!
-    fn issue_request(&mut self, req: hyper::client::Request) -> Option<serde_json::Value> {
+    fn issue_request(&mut self, req: hyper::client::Request) -> Result<serde_json::Value, String> {
         let lookup = self.client.request(req);
 
         let resp: hyper::Response = self.core.run(lookup).unwrap();
@@ -79,19 +79,13 @@ impl Queryer {
         match serde_json::from_slice(&resp_body) {
             Ok(value) => {
                 if status != hyper::StatusCode::Ok {
-                    println!("!! Requests returned status: {}", status);
-                    println!("{}", value);
-                    None
+                    Err(format!("!! Requests returned status: {}\n{}", status, value))
                 } else {
-                    Some(value)
+                    Ok(value)
                 }
             }
             Err(e) => {
-                if status != hyper::StatusCode::Ok {
-                    println!("!! Requests returned status: {}", status);
-                }
-                println!("error deserializing json: {}", e);
-                None
+                Err(format!("!! Requests returned status: {}\nerror deserializing json: {}", status, e))
             }
         }
     }
@@ -171,7 +165,6 @@ fn signed_api_req(url: &str, method: Method) -> hyper::client::Request {
         headers.set(Accept("*/*".to_owned()));
     };
 
-//    println!("Request built: {:?}", req);
     req
 }
 
@@ -180,8 +173,6 @@ fn main() {
     //Track words
 //    let url = "https://stream.twitter.com/1.1/statuses/filter.json";
 //    let url = "https://stream.twitter.com/1.1/statuses/sample.json";
-
-    println!("starting!");
 
     let (ui_tx, mut ui_rx) = chan::sync::<Vec<u8>>(0);
 
@@ -231,8 +222,6 @@ fn main() {
             }
         }
     }
-
-    println!("Bye bye");
 }
 
 fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) -> Option<(chan::Receiver<Vec<u8>>, chan::Receiver<Vec<u8>>)> {
@@ -243,7 +232,6 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
             twete_rx.recv() -> twete => match twete {
                 Some(line) => {
                     let jsonstr = std::str::from_utf8(&line).unwrap().trim();
-//                    println!("{}", jsonstr);
                     /* TODO: replace from_str with from_slice */
                     let json: serde_json::Value = serde_json::from_str(&jsonstr).unwrap();
                     tw::handle_message(json, &mut tweeter, &mut queryer);
@@ -252,7 +240,7 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
                     }
                 }
                 None => {
-                    println!("Twitter stream hung up...");
+                    tweeter.display_info.status("Twitter stream hung up...".to_owned());
                     chan_select! {
                         ui_rx_b.recv() -> input => match input {
                             Some(line) => {
@@ -271,13 +259,16 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
                 Some(line) => {
                     tweeter.handle_user_input(line, &mut queryer);
                 },
-                None => println!("UI thread hung up...")
+                None => tweeter.display_info.status("UI thread hung up...".to_owned())
             }
             // and then we can introduce a channel that just sends a message every 100 ms or so
             // that acts as a clock!
         }
         // one day display_info should be distinct
-        display::paint(tweeter);
+        match display::paint(tweeter) {
+            Ok(_) => (),
+            Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
+        };
     }
 }
 
@@ -325,9 +316,6 @@ fn connect_twitter_stream() -> chan::Receiver<Vec<u8>> {
             .keep_alive(true)
             .connector(connector)
             .build(&core.handle());
-
-    //    println!("{}", do_web_req("https://caps.twitter.com/v2/capi/passthrough/1?twitter:string:card_uri=card://887655800482787328&twitter:long:original_tweet_id=887655800981925888&twitter:string:response_card_name=poll3choice_text_only&twitter:string:cards_platform=Web-12", &client, &mut core).unwrap());
-    //    println!("{}", look_up_tweet("887655800981925888", &client, &mut core).unwrap());
 
         let req = signed_api_get(STREAMURL);
         let work = client.request(req).and_then(|res| {

@@ -12,10 +12,11 @@ pub static LOOK_UP_USER: Command = Command {
 };
 
 fn look_up_user(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
-    if let Some(user) = tweeter.fetch_user(&line, &mut queryer) {
-        println!("{:?}", user);
+    // should probably just pass the id?
+    if let Some(user) = tweeter.fetch_user(&line, &mut queryer).map(|x| x.clone()) {
+        tweeter.display_info.recv(display::Infos::User(user));
     } else {
-//            println!("Couldn't retrieve {}", userid);
+        tweeter.display_info.status(format!("Couldn't retrieve {}", line));
     }
 }
 
