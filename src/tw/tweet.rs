@@ -38,14 +38,17 @@ impl Tweet {
             .collect()
     }
 
-    pub fn from_api_json(json: serde_json::Value) -> Option<(Tweet, User)> {
+    pub fn from_api_json(json: serde_json::Value) -> Result<(Tweet, User), String> {
         Tweet::from_json(json.clone()).and_then(|tw| {
-            json.get("user").and_then(|user_json|
-                User::from_json(user_json.to_owned()).map(|u| (tw, u))
-            )
+            match json.get("user") {
+                Some(user_json) =>
+                    User::from_json(user_json.to_owned()).map(|u| (tw, u)),
+                None =>
+                    Err("No user json".to_owned())
+            }
         })
     }
-    pub fn from_json(json: serde_json::Value) -> Option<Tweet> {
+    pub fn from_json(json: serde_json::Value) -> Result<Tweet, String> {
         if let serde_json::Value::Object(json_map) = json {
             let text = ::tw::full_twete_text(&json_map);
             let rt_twete = json_map.get("retweeted_status")
@@ -67,7 +70,7 @@ impl Tweet {
                     json_map["user"]["id_str"].as_str(),
                     json_map["created_at"].as_str()
                 ) {
-                    return Some(Tweet {
+                    return Ok(Tweet {
                         id: id_str.to_owned(),
                         author_id: author_id.to_owned(),
                         text: text,
@@ -82,6 +85,6 @@ impl Tweet {
                 }
             }
         }
-        None
+        Err("Invalid tweet json".to_owned())
     }
 }

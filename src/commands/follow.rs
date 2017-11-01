@@ -14,7 +14,10 @@ pub static UNFOLLOW: Command = Command {
 
 fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let screen_name = line.trim();
-    queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name));
+    match queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name)) {
+        Ok(_resp) => (),
+        Err(e) => tweeter.display_info.status(format!("unfl request error: {}", e))
+    }
 }
 
 pub static FOLLOW: Command = Command {
@@ -25,5 +28,5 @@ pub static FOLLOW: Command = Command {
 
 fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let screen_name = line.trim();
-    println!("fl resp: {:?}", queryer.do_api_post(&format!("{}?screen_name={}", UNFOLLOW_URL, screen_name)));
+    tweeter.display_info.status(format!("fl resp: {:?}", queryer.do_api_post(&format!("{}?screen_name={}", UNFOLLOW_URL, screen_name))));
 }

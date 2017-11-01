@@ -14,7 +14,7 @@ pub static FORGET_THREAD: Command = Command {
 
 fn forget(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
     tweeter.forget_thread(line.trim().to_string());
-    println!("Ok! Forgot thread {}", line.trim().to_string());
+    tweeter.display_info.status(format!("Ok! Forgot thread {}", line.trim().to_string()));
 }
 
 pub static REMEMBER_THREAD: Command = Command {
@@ -55,20 +55,9 @@ pub static LIST_THREADS: Command = Command {
 };
 
 fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    println!("Threads: ");
     let threads: Vec<String> = tweeter.threads().collect::<Vec<&String>>().into_iter().map(|x| x.to_owned()).collect::<Vec<String>>();
     for k in threads {
-        println!("Thread: {}", k);
         let latest_inner_id = tweeter.latest_in_thread(k.to_owned()).unwrap().to_owned();
-        // should be able to just directly render TweetId.. and threads should be Vec<TweetId>...
-        let twete_id_TEMP = tweeter.retrieve_tweet(&TweetId::Bare(latest_inner_id)).map(|x| x.id.to_owned());
-        if let Some(twete) = twete_id_TEMP {
-                                // gross..
-            // and this ought to be a command to tweeter.display_info anyway...
-            display::render_twete(&TweetId::Twitter(twete), tweeter);
-            println!("");
-        } else {
-            println!("ERROR no tweet for remembered thread.");
-        }
+        tweeter.display_info.recv(display::Infos::TweetWithContext(TweetId::Bare(latest_inner_id), format!("Thread: {}", k)))
     }
 }

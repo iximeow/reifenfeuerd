@@ -22,11 +22,13 @@ impl Event {
     fn get_source_target_ids(structure: serde_json::Map<String, serde_json::Value>) -> Result<(String, String), String> {
         match (
             structure.get("source").and_then(|x| x.get("id_str").and_then(|x| x.as_str())),
-            structure.get("target_obj").and_then(|x| x.get("id_str").and_then(|x| x.as_str()))
+            structure.get("target_object").and_then(|x| x.get("id_str").and_then(|x| x.as_str()))
         ) {
             (Some(source_id), Some(target_id)) => Ok((source_id.to_string(), target_id.to_string())),
-            (None, Some(target_id)) => Err("No id_str string at .source.id_str".to_string()),
-            (Some(target_id), None) => Err("No id_str string at .target_object.id_str".to_string()),
+            // have more particular error types for "missing fields", "missing data", "invalid
+            // state", etc, so downstream we can opt to investigate the bad data or not..
+            (None, Some(_)) => Err("No id_str string at .source.id_str: {}".to_string()),
+            (Some(_), None) => Err("No id_str string at .target_object.id_str: {}".to_string()),
             (None, None) => Err("No id_str at source or target_object".to_string())
         }
     }
@@ -96,7 +98,7 @@ impl Event {
         //                what about removed?
         //                "blocked" => Blocked { },
         //                "unblocked" => Unblocked { },
-                    e => { println!("unrecognized event: {}", e); Err(e.to_string()) }
+                    e => Err(e.to_string())
                 }
             },
             None => {

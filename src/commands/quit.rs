@@ -12,7 +12,7 @@ pub static QUIT: Command = Command {
 };
 
 fn quit(_line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
-    println!("Bye bye!");
+    tweeter.display_info.status("Bye bye!".to_owned());
     tweeter.store_cache();
     exit(0);
 }

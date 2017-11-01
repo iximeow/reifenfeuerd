@@ -15,45 +15,91 @@ use std;
 #[derive(Clone)]
 pub enum Infos {
     Tweet(TweetId),
+    TweetWithContext(TweetId, String),
     Thread(Vec<TweetId>),
     Event(tw::events::Event),
-    DM(String)
+    DM(String),
+    User(tw::user::User)
 }
 
-pub fn paint(tweeter: &mut ::tw::TwitterCache) {
+pub struct DisplayInfo {
+    pub log_seek: u32,
+    pub infos_seek: u32,
+    pub log: Vec<String>,
+    pub infos: Vec<Infos>
+}
+
+impl Default for DisplayInfo {
+    fn default() -> Self {
+        DisplayInfo {
+            log_seek: 0,
+            infos_seek: 0,
+            log: Vec::new(),
+            infos: Vec::new()
+        }
+    }
+}
+
+impl DisplayInfo {
+    pub fn status(&mut self, stat: String) {
+        self.log.push(stat);
+    }
+
+    pub fn recv(&mut self, info: Infos) {
+        self.infos.push(info);
+    }
+}
+
+pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
     match termion::terminal_size() {
-        Ok((width, height)) => {
+        Ok((_width, height)) => {
             // draw input prompt
-            println!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
-            println!("{}{}>", cursor::Goto(1, height - 5), clear::CurrentLine);
-            println!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
+            print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
+            print!("{}{}>", cursor::Goto(1, height - 5), clear::CurrentLine);
+            print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
             let mut i = 0;
             let log_size = 4;
             let last_elem = tweeter.display_info.log.len().saturating_sub(log_size);
             {
-                let to_show = tweeter.display_info.log.drain(last_elem..);
+                let to_show = tweeter.display_info.log[last_elem..].iter().rev();
                 for line in to_show {
-                    println!("{}{}{}", cursor::Goto(1, height - i), clear::CurrentLine, line);
+                    print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, tweeter.display_info.log.len() - 1 - i as usize, tweeter.display_info.log.len() - 1, line);
                     i = i + 1;
                 }
             }
             while i < log_size as u16 {
-                println!("{}{}", cursor::Goto(1, height - i), clear::CurrentLine);
+                print!("{}{}", cursor::Goto(1, height - i), clear::CurrentLine);
                 i = i + 1;
             }
             // draw status lines
             // draw tweets
-            let last_twevent = tweeter.display_info.infos.len().saturating_sub(height as usize - 4);
+            let last_twevent = tweeter.display_info.infos.len().saturating_sub(height as usize - 4).saturating_sub(tweeter.display_info.infos_seek as usize);
             let last_few_twevent: Vec<Infos> = tweeter.display_info.infos[last_twevent..].iter().map(|x| x.clone()).rev().collect::<Vec<Infos>>();
 
             let mut h = 7;
             for info in last_few_twevent {
-                let mut to_draw = match info {
+                let to_draw: Vec<String> = match info {
                     Infos::Tweet(id) => {
-                        render_twete(&id, tweeter).iter().map(|x| x.to_owned()).rev().collect()
+                        let pre_split: Vec<String> = render_twete(&id, tweeter);
+                        let split_on_newline: Vec<String> = pre_split.into_iter().flat_map(|x| x.split("\n").map(|x| x.to_owned()).collect::<Vec<String>>()).collect();
+                        let wrapped: Vec<String> = split_on_newline.iter()
+                            .map(|x| x.chars().collect::<Vec<char>>())
+                            .flat_map(|x| x.chunks(_width as usize)
+                                .map(|x| x.into_iter().collect::<String>())
+                                .collect::<Vec<String>>())
+                            .collect();
+                        wrapped.into_iter().rev().collect()
                     }
-                    Infos::Thread(ids) => {
-                        vec![format!("{}{}I'd show a thread if I knew how", cursor::Goto(1, height - h), clear::CurrentLine)]
+                    Infos::TweetWithContext(id, context) => {
+                        let mut lines = render_twete(&id, tweeter).iter().map(|x| x.to_owned()).rev().collect::<Vec<String>>();
+                        lines.push(context);
+                        lines
+                    }
+                    Infos::Thread(_ids) => {
+                        let mut lines = vec![format!("{}{}I'd show a thread if I knew how", cursor::Goto(1, height - h), clear::CurrentLine)];
+                        lines.push("".to_owned());
+//                        lines.push(format!("link: https://twitter.com/i/web/status/{}", id));
+                        lines
                     },
                     Infos::Event(e) => {
                         e.clone().render(tweeter).into_iter().rev().collect()
@@ -61,35 +107,39 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) {
                     Infos::DM(msg) => {
                         vec![format!("{}{}DM: {}", cursor::Goto(1, height - h), clear::CurrentLine, msg)]
                     }
+                    Infos::User(user) => {
+                        vec![
+                            format!("{} (@{})", user.name, user.handle)
+                        ]
+                    }
                 };
                 for line in to_draw {
-                    println!("{}{}{}", cursor::Goto(1, height - h), clear::CurrentLine, line);
+                    print!("{}{}{}", cursor::Goto(1, height - h), clear::CurrentLine, line);
                     h = h + 1;
                     if h >= height {
                         print!("{}", cursor::Goto(2, height - 6));
-            stdout().flush();
-                        return;
+                        return stdout().flush();
                     }
                 }
-                println!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
+                print!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
                 h = h + 1;
                 if h >= height {
                     print!("{}", cursor::Goto(2, height - 6));
-            stdout().flush();
-                    return;
+                    return stdout().flush();
                 }
             }
             while h < height {
-                println!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
+                print!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
                 h = h + 1;
             }
-            print!("{}", cursor::Goto(2, height - 6));
-            stdout().flush();
+            print!("{}", cursor::Goto(2, height - 5));
+            stdout().flush()?;
         },
         Err(e) => {
             println!("Can't get term dimensions: {}", e);
         }
     }
+    Ok(())
 }
 
 fn color_for(handle: &String) -> termion::color::Fg<&color::Color> {
@@ -125,7 +175,7 @@ impl Render for tw::events::Event {
                 result.push("---------------------------------".to_string());
                 {
                     let user = tweeter.retrieve_user(&user_id).unwrap();
-                    println!("  quoted_tweet    : {} (@{})", user.name, user.handle);
+                    result.push(format!("  quoted_tweet    : {} (@{})", user.name, user.handle));
                 }
                 render_twete(&TweetId::Twitter(twete_id), tweeter);
             }

@@ -15,7 +15,6 @@ use std::fs::OpenOptions;
 
 pub mod events;
 
-use display::Render;
 use display;
 
 pub mod tweet;
@@ -104,7 +103,7 @@ pub struct TwitterCache {
     #[serde(skip)]
     id_conversions: IdConversions,
     #[serde(skip)]
-    pub display_info: DisplayInfo
+    pub display_info: display::DisplayInfo
 }
 
 // Internally, a monotonically increasin i64 is always the id used.
@@ -217,30 +216,6 @@ impl IdConversions {
     }
 }
 
-pub struct DisplayInfo {
-    pub log: Vec<String>,
-    pub infos: Vec<display::Infos>
-}
-
-impl Default for DisplayInfo {
-    fn default() -> Self {
-        DisplayInfo {
-            log: Vec::new(),
-            infos: Vec::new()
-        }
-    }
-}
-
-impl DisplayInfo {
-    pub fn status(&mut self, stat: String) {
-        self.log.push(stat);
-    }
-
-    pub fn recv(&mut self, info: display::Infos) {
-        self.infos.push(info);
-    }
-}
-
 use commands::Command;
 use Queryer;
 
@@ -284,7 +259,7 @@ impl TwitterCache {
             current_user: User::default(),
             threads: HashMap::new(),
             id_conversions: IdConversions::default(),
-            display_info: DisplayInfo::default()
+            display_info: display::DisplayInfo::default()
         }
     }
 
@@ -298,7 +273,6 @@ impl TwitterCache {
         } else {
             self.display_info.status(format!("I don't know what {} means", command).to_string());
         }
-//        println!(""); // temporaryish because there's no visual distinction between output atm
     }
 
     fn new_without_caching() -> TwitterCache {
@@ -332,7 +306,7 @@ impl TwitterCache {
             self.number_and_insert_tweet(tweet);
         }
     }
-    pub fn store_cache(&self) {
+    pub fn store_cache(&mut self) {
         if Path::new(TwitterCache::PROFILE_DIR).is_dir() {
             let profile = OpenOptions::new()
                 .write(true)
@@ -342,7 +316,7 @@ impl TwitterCache {
                 .unwrap();
             serde_json::to_writer(profile, self).unwrap();
         } else {
-            println!("No cache dir exists...");
+            self.display_info.status("No cache dir exists...".to_owned());
         }
         // store cache
     }
@@ -398,23 +372,29 @@ impl TwitterCache {
         }
     }
     pub fn cache_api_tweet(&mut self, json: serde_json::Value) {
-        if let Some((rt, rt_user)) = json.get("retweeted_status").and_then(|x| Tweet::from_api_json(x.to_owned())) {
+        // TODO: log error somehow
+        if let Some(Ok((rt, rt_user))) = json.get("retweeted_status").map(|x| Tweet::from_api_json(x.to_owned())) {
             self.cache_user(rt_user);
             self.cache_tweet(rt);
         }
 
-        if let Some((qt, qt_user)) = json.get("quoted_status").and_then(|x| Tweet::from_api_json(x.to_owned())) {
+        // TODO: log error somehow
+        if let Some(Ok((qt, qt_user))) = json.get("quoted_status").map(|x| Tweet::from_api_json(x.to_owned())) {
             self.cache_user(qt_user);
             self.cache_tweet(qt);
         }
 
-        if let Some((twete, user)) = Tweet::from_api_json(json) {
+        // TODO: log error somehow
+        if let Ok((twete, user)) = Tweet::from_api_json(json) {
             self.cache_user(user);
             self.cache_tweet(twete);
         }
     }
     pub fn cache_api_user(&mut self, json: serde_json::Value) {
-        if let Some(user) = User::from_json(json) {
+        // TODO: log error somehow
+        // TODO: probably means display_info needs a more technical-filled log for debugging,
+        //       independent of the user-facing statuses, like "invalid id"
+        if let Ok(user) = User::from_json(json) {
             self.cache_user(user);
         }
     }
@@ -517,8 +497,8 @@ impl TwitterCache {
             &TweetId::Twitter(ref id) => {
                 if !self.tweets.contains_key(id) {
                     match self.look_up_tweet(id, &mut queryer) {
-                        Some(json) => self.cache_api_tweet(json),
-                        None => self.display_info.status(format!("Unable to retrieve tweet {}", id))
+                        Ok(json) => self.cache_api_tweet(json),
+                        Err(e) => self.display_info.status(format!("Unable to retrieve tweet {}:\n{}", id, e))
                     };
                 }
                 self.retrieve_tweet(tweet_id)
@@ -529,8 +509,8 @@ impl TwitterCache {
         if !self.users.contains_key(user_id) {
             let maybe_parsed = self.look_up_user(user_id, &mut queryer).and_then(|x| User::from_json(x));
             match maybe_parsed {
-                Some(tw) => self.cache_user(tw),
-                None => self.display_info.status(format!("Unable to retrieve user {}", user_id))
+                Ok(tw) => self.cache_user(tw),
+                Err(e) => self.display_info.status(format!("Unable to retrieve user {}:\n{}", user_id, e))
             }
         }
         self.users.get(user_id)
@@ -540,13 +520,13 @@ impl TwitterCache {
 
         let new_uids = &uid_set - &self.following;
         for user in &new_uids {
-            println!("New following! {}", user);
+            self.display_info.status(format!("New following! {}", user));
             self.add_following(user);
         }
 
         let lost_uids = &self.following - &uid_set;
         for user in &lost_uids {
-            println!("Bye, friend! {}", user);
+            self.display_info.status(format!("Bye, friend! {}", user));
             self.remove_following(user);
         }
     }
@@ -555,13 +535,13 @@ impl TwitterCache {
 
         let new_uids = &uid_set - &self.followers;
         for user in &new_uids {
-            println!("New follower! {}", user);
+            self.display_info.status(format!("New follower! {}", user));
             self.add_follower(user);
         }
 
         let lost_uids = &self.followers - &uid_set;
         for user in &lost_uids {
-            println!("Bye, friend! {}", user);
+            self.display_info.status(format!("Bye, friend! {}", user));
             self.remove_follower(user);
         }
     }
@@ -588,21 +568,21 @@ impl TwitterCache {
         self.follower_history.insert(user_id.to_owned(), ("unfollow".to_string(), Utc::now().timestamp()));
     }
 
-    fn look_up_user(&mut self, id: &str, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
+    fn look_up_user(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         let url = &format!("{}?user_id={}", ::USER_LOOKUP_URL, id);
         queryer.do_api_get(url)
     }
 
-    fn look_up_tweet(&mut self, id: &str, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
+    fn look_up_tweet(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         let url = &format!("{}&id={}", ::TWEET_LOOKUP_URL, id);
         queryer.do_api_get(url)
     }
 
-    pub fn get_settings(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
+    pub fn get_settings(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         queryer.do_api_get(::ACCOUNT_SETTINGS_URL)
     }
 
-    pub fn get_followers(&self, queryer: &mut ::Queryer) -> Option<serde_json::Value> {
+    pub fn get_followers(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         queryer.do_api_get(::GET_FOLLOWER_IDS_URL)
     }
 
@@ -684,7 +664,6 @@ fn handle_twitter_welcome(
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     queryer: &mut ::Queryer) {
-//        println!("welcome: {:?}", structure);
     let user_id_nums = structure["friends"].as_array().unwrap();
     let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
     tweeter.set_following(user_id_strs.collect());
@@ -722,6 +701,8 @@ pub fn handle_message(
                 handle_twitter_twete(objmap, tweeter, queryer);
             } else if objmap.contains_key("direct_message") {
                 handle_twitter_dm(objmap, tweeter, queryer);
+            } else {
+                tweeter.display_info.status(format!("Unknown json: {:?}", objmap));
             }
 //            self.display_info.status("");
         },
