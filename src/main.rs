@@ -1,8 +1,17 @@
 #![feature(vec_remove_item)]
 extern crate serde_json;
 
+extern crate termion;
+extern crate termios;
+
+use termios::{Termios, TCSANOW, ECHO, ICANON, tcsetattr};
+
+use termion::input::TermRead;
+use termion::event::{Event, Key};
+
 use std::str;
 //use std::io::BufRead;
+use std::io::stdin;
 
 #[macro_use] extern crate chan;
 
@@ -174,15 +183,13 @@ fn main() {
 //    let url = "https://stream.twitter.com/1.1/statuses/filter.json";
 //    let url = "https://stream.twitter.com/1.1/statuses/sample.json";
 
-    let (ui_tx, mut ui_rx) = chan::sync::<Vec<u8>>(0);
+    let (ui_tx, mut ui_rx) = chan::sync::<Result<termion::event::Event, std::io::Error>>(0);
 
     let mut twete_rx = connect_twitter_stream();
 
     std::thread::spawn(move || {
-        loop {
-            let mut line = String::new();
-            std::io::stdin().read_line(&mut line).unwrap();
-            ui_tx.send(line.into_bytes());
+        for input in stdin().events() {
+            ui_tx.send(input);
         }
     });
 
@@ -211,6 +218,13 @@ fn main() {
         core: c2
     };
 
+    let termios = Termios::from_fd(0).unwrap();
+    let mut new_termios = termios.clone();
+
+    // fix terminal to not echo, thanks
+    new_termios.c_lflag &= !(ICANON | ECHO);
+
+    tcsetattr(0, TCSANOW, &new_termios).unwrap();
     loop {
         match do_ui(ui_rx, twete_rx, &mut tweeter, &mut queryer) {
             Some((new_ui_rx, new_twete_rx)) => {
@@ -222,9 +236,82 @@ fn main() {
             }
         }
     }
+    tcsetattr(0, TCSANOW, &termios);
 }
 
-fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) -> Option<(chan::Receiver<Vec<u8>>, chan::Receiver<Vec<u8>>)> {
+fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, queryer: &mut ::Queryer) {
+    match event {
+        Event::Key(Key::Backspace) => {
+            match tweeter.display_info.mode.clone() {
+                None => { tweeter.display_info.input_buf.pop(); },
+                Some(display::DisplayMode::Compose(msg)) => {
+                    let mut newstr = msg.clone();
+                    newstr.pop();
+                    tweeter.display_info.mode = Some(display::DisplayMode::Compose(newstr));
+                },
+                Some(display::DisplayMode::Reply(twid, msg)) => {
+                    let mut newstr = msg.clone();
+                    newstr.pop();
+                    tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, newstr));
+                }
+            }
+        }
+        // would Shift('\n') but.. that doesn't exist.
+        // would Ctrl('\n') but.. that doesn't work.
+        Event::Key(Key::Ctrl('n')) => {
+            match tweeter.display_info.mode.clone() {
+                Some(display::DisplayMode::Compose(msg)) => {
+                    tweeter.display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, "\n")));
+                }
+                _ => {}
+            }
+        }
+        Event::Key(Key::Char(x)) => {
+            match tweeter.display_info.mode.clone() {
+                None => {
+                    if x == '\n' {
+                        let line = tweeter.display_info.input_buf.drain(..).collect::<String>();
+                        tweeter.handle_user_input(line.into_bytes(), queryer);
+                    } else {
+                        tweeter.display_info.input_buf.push(x);
+                    }
+                }
+                Some(display::DisplayMode::Compose(msg)) => {
+                    if x == '\n' {
+                        // TODO: move this somewhere better.
+                        ::commands::twete::send_twete(msg, tweeter, queryer);
+                        tweeter.display_info.mode = None;
+                    } else {
+                        tweeter.display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, x)));
+                    }
+                }
+                Some(display::DisplayMode::Reply(twid, msg)) => {
+                    if x == '\n' {
+                        // TODO: move this somewhere better.
+                        ::commands::twete::send_reply(msg, twid, tweeter, queryer);
+                        tweeter.display_info.mode = None;
+                    } else {
+                        tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, format!("{}{}", msg, x)));
+                    }
+                }
+            }
+        },
+        Event::Key(Key::PageUp) => {
+            tweeter.display_info.infos_seek += 1;
+        }
+        Event::Key(Key::PageDown) => {
+            tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_sub(1);
+        }
+        Event::Key(Key::Esc) => {
+            tweeter.display_info.mode = None;
+        }
+        Event::Key(_) => { }
+        Event::Mouse(_) => { }
+        Event::Unsupported(_) => {}
+    }
+}
+
+fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error>>, twete_rx: chan::Receiver<Vec<u8>>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) -> Option<(chan::Receiver<Result<termion::event::Event, std::io::Error>>, chan::Receiver<Vec<u8>>)> {
     loop {
         let ui_rx_a = &ui_rx_orig;
         let ui_rx_b = &ui_rx_orig;
@@ -243,27 +330,38 @@ fn do_ui(ui_rx_orig: chan::Receiver<Vec<u8>>, twete_rx: chan::Receiver<Vec<u8>>,
                     tweeter.display_info.status("Twitter stream hung up...".to_owned());
                     chan_select! {
                         ui_rx_b.recv() -> input => match input {
-                            Some(line) => {
-                                if line == "reconnect\n".as_bytes() {
-                                    return Some((ui_rx_orig.clone(), connect_twitter_stream()));
+                            Some(maybe_event) => {
+                                if let Ok(event) = maybe_event {
+                                    handle_input(event, tweeter, queryer);
                                 } else {
-                                    tweeter.handle_user_input(line, &mut queryer);
+                                    // stdin closed?
                                 }
                             }
+                            // twitter stream closed, ui thread closed, uhh..
                             None => std::process::exit(0)
                         }
                     }
                 }
             },
             ui_rx_a.recv() -> user_input => match user_input {
-                Some(line) => {
-                    tweeter.handle_user_input(line, &mut queryer);
+                Some(maybe_event) => {
+                    if let Ok(event) = maybe_event {
+                        handle_input(event, tweeter, queryer); // eventually DisplayInfo too, as a separate piece of data...
+                    } else {
+                        // dunno how we'd reach this... stdin closed?
+                    }
                 },
                 None => tweeter.display_info.status("UI thread hung up...".to_owned())
             }
             // and then we can introduce a channel that just sends a message every 100 ms or so
             // that acts as a clock!
         }
+
+        match tweeter.state {
+            tw::AppState::Reconnect => return Some((ui_rx_orig.clone(), connect_twitter_stream())),
+            _ => ()
+        };
+
         // one day display_info should be distinct
         match display::paint(tweeter) {
             Ok(_) => (),

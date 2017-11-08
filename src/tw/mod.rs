@@ -22,6 +22,16 @@ use self::tweet::Tweet;
 pub mod user;
 use self::user::User;
 
+pub enum AppState {
+    Reconnect,
+    Compose,
+    View
+}
+
+impl Default for AppState {
+    fn default() -> AppState { AppState::View }
+}
+
 pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) -> String {
     if twete.contains_key("retweeted_status") {
         return full_twete_text(twete["retweeted_status"].as_object().unwrap())
@@ -103,7 +113,9 @@ pub struct TwitterCache {
     #[serde(skip)]
     id_conversions: IdConversions,
     #[serde(skip)]
-    pub display_info: display::DisplayInfo
+    pub display_info: display::DisplayInfo,
+    #[serde(skip)]
+    pub state: AppState
 }
 
 // Internally, a monotonically increasin i64 is always the id used.
@@ -259,7 +271,8 @@ impl TwitterCache {
             current_user: User::default(),
             threads: HashMap::new(),
             id_conversions: IdConversions::default(),
-            display_info: display::DisplayInfo::default()
+            display_info: display::DisplayInfo::default(),
+            state: AppState::View
         }
     }
 
