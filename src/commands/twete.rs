@@ -36,13 +36,23 @@ fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 
 pub static TWETE: Command = Command {
     keyword: "t",
-    params: 1,
+    params: 0,
     exec: twete
 };
 
 fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    let text = line.trim();
-    let substituted = ::url_encode(text);
+    // if there's text, send it.
+    // if it's just "t", enter compose mode.
+    let text = line.trim().to_owned();
+    if text.len() == 0 {
+        tweeter.display_info.mode = Some(::display::DisplayMode::Compose(text));
+    } else {
+        send_twete(text, tweeter, queryer);
+    }
+}
+
+pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    let substituted = ::url_encode(&text);
     if text.len() <= 140 {
         match queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted)) {
             Ok(_) => (),
@@ -61,6 +71,8 @@ pub static THREAD: Command = Command {
     exec: thread
 };
 
+// the difference between threading and replying is not including
+// yourself in th @'s.
 fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let mut text: String = line.trim().to_string();
     if let Some(id_end_idx) = text.find(" ") {
@@ -75,11 +87,7 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                         // TODO: definitely breaks if you change your handle right now
                         if handle == &tweeter.current_user.handle {
-                            let substituted = ::url_encode(reply);
-                            match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
-                                Ok(_) => (),
-                                Err(e) => tweeter.display_info.status(e)
-                            }
+                            send_reply(reply.to_owned(), twid, tweeter, queryer);
                         } else {
                             tweeter.display_info.status("you can only thread your own tweets".to_owned());
                             // ask if it should .@ instead?
@@ -100,58 +108,70 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 
 pub static REP: Command = Command {
     keyword: "rep",
-    params: 2,
+    params: 1,
     exec: rep
 };
 
 fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let mut text: String = line.trim().to_string();
-    if let Some(id_end_idx) = text.find(" ") {
-        let reply_bare = text.split_off(id_end_idx + 1);
-        let reply = reply_bare.trim();
-        let id_str = text.trim();
-        if reply.len() > 0 {
-            let maybe_id = TweetId::parse(id_str.to_owned());
-            match maybe_id {
-                Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
-                        // get handles to reply to...
-                        let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
-                        let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
-                        /*
-                        for handle in twete.get_mentions() {
-                            ats.insert(handle);
-                        }
-                        */
-                        ats.remove_item(&author_handle);
-                        ats.insert(0, author_handle);
-                        if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
-                            let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
-                            ats.remove_item(&rt_author_handle);
-                            ats.insert(1, rt_author_handle);
-                        }
-                        //let ats_vec: Vec<&str> = ats.into_iter().collect();
-                        //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
-                        let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
-                        let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
-                        let substituted = ::url_encode(&full_reply);
-                        match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
-                            Ok(_) => (),
-                            Err(e) => tweeter.display_info.status(e)
-                        }
-                    } else {
-                        tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
-                    }
-                },
-                Err(e) => {
-                    tweeter.display_info.status(format!("Cannot parse input: {:?} ({})", id_str, e));
+    let reply_bare = match text.find(" ") {
+        None => "".to_owned(),
+        Some(id_end_idx) => {
+            text.split_off(id_end_idx + 1)
+        }
+    };
+    let reply = reply_bare.trim();
+    let id_str = text.trim();
+    let maybe_id = TweetId::parse(id_str.to_owned());
+    match maybe_id {
+        Ok(twid) => {
+            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                // get handles to reply to...
+                let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
+                let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
+                ats.remove_item(&author_handle);
+                ats.insert(0, author_handle);
+                if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
+                    let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
+                    ats.remove_item(&rt_author_handle);
+                    ats.insert(1, rt_author_handle);
                 }
+
+                // if you're directly replying to yourself, i trust you know what you're doing and
+                // want to @ yourself again (this keeps self-replies from showing up on your
+                // profile as threaded tweets, f.ex)
+                if !(ats.len() > 0 && &ats[0] == &tweeter.current_user.handle) {
+                    ats.remove_item(&tweeter.current_user.handle);
+                }
+                //let ats_vec: Vec<&str> = ats.into_iter().collect();
+                //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
+                let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
+                let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
+
+                if reply.len() > 0 {
+                    send_reply(full_reply, twid, tweeter, queryer);
+                } else {
+                    tweeter.display_info.mode = Some(::display::DisplayMode::Reply(twid, full_reply));
+                }
+            } else {
+                tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
             }
-        } else {
-            tweeter.display_info.status("rep <id> your sik reply".to_owned());
+        },
+        Err(e) => {
+            tweeter.display_info.status(format!("Cannot parse input: {:?} ({})", id_str, e));
+        }
+    }
+}
+
+pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+        let substituted = ::url_encode(&text);
+        match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
+            Ok(_) => (),
+            Err(e) => tweeter.display_info.status(e)
         }
     } else {
-        tweeter.display_info.status("rep <id> your sik reply".to_owned());
+        tweeter.display_info.status(format!("Tweet stopped existing: {:?}", twid));
     }
 }
 

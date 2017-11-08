@@ -13,6 +13,12 @@ use ::tw::TweetId;
 use std;
 
 #[derive(Clone)]
+pub enum DisplayMode {
+    Compose(String),
+    Reply(TweetId, String)
+}
+
+#[derive(Clone)]
 pub enum Infos {
     Tweet(TweetId),
     TweetWithContext(TweetId, String),
@@ -22,20 +28,29 @@ pub enum Infos {
     User(tw::user::User)
 }
 
+const COMPOSE_HEIGHT: u16 = 5;
 pub struct DisplayInfo {
+    pub log_height: u16,
+    pub prompt_height: u16,
+    pub mode: Option<DisplayMode>,
     pub log_seek: u32,
     pub infos_seek: u32,
     pub log: Vec<String>,
-    pub infos: Vec<Infos>
+    pub infos: Vec<Infos>,
+    pub input_buf: Vec<char>
 }
 
 impl Default for DisplayInfo {
     fn default() -> Self {
         DisplayInfo {
+            log_height: 4,
+            prompt_height: 3,
+            mode: None,
             log_seek: 0,
             infos_seek: 0,
             log: Vec::new(),
-            infos: Vec::new()
+            infos: Vec::new(),
+            input_buf: Vec::new()
         }
     }
 }
@@ -48,15 +63,34 @@ impl DisplayInfo {
     pub fn recv(&mut self, info: Infos) {
         self.infos.push(info);
     }
+
+    pub fn ui_height(&self) -> u16 {
+        self.log_height + self.prompt_height
+    }
+}
+
+/*
+ * wraps x so each line is indentation or fewer characters, after splitting by \n.
+ */
+fn into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
+    let split_on_newline: Vec<String> = x.into_iter()
+        .flat_map(|x| x.split("\n")
+            .map(|x| x.to_owned())
+            .collect::<Vec<String>>()
+        ).collect();
+    let wrapped: Vec<String> = split_on_newline.iter()
+        .map(|x| x.chars().collect::<Vec<char>>())
+        .flat_map(|x| x.chunks(width as usize)
+            .map(|x| x.into_iter().collect::<String>())
+            .collect::<Vec<String>>())
+        .collect();
+    wrapped
 }
 
 pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
     match termion::terminal_size() {
-        Ok((_width, height)) => {
+        Ok((width, height)) => {
             // draw input prompt
-            print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
-            print!("{}{}>", cursor::Goto(1, height - 5), clear::CurrentLine);
-            print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
             let mut i = 0;
             let log_size = 4;
             let last_elem = tweeter.display_info.log.len().saturating_sub(log_size);
@@ -76,18 +110,68 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
             let last_twevent = tweeter.display_info.infos.len().saturating_sub(height as usize - 4).saturating_sub(tweeter.display_info.infos_seek as usize);
             let last_few_twevent: Vec<Infos> = tweeter.display_info.infos[last_twevent..].iter().map(|x| x.clone()).rev().collect::<Vec<Infos>>();
 
-            let mut h = 7;
+            let mut h = tweeter.display_info.ui_height();
+
+            /*
+             * draw in whatever based on mode...
+             */
+            match tweeter.display_info.mode.clone() {
+                None => {
+                    print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
+                    print!("{}{}@{}>{}", cursor::Goto(1, height - 5), clear::CurrentLine, tweeter.current_user.handle, tweeter.display_info.input_buf.clone().into_iter().collect::<String>());
+                    print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
+                }
+                Some(DisplayMode::Compose(x)) => {
+                    let mut lines: Vec<String> = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width - 2);
+                    if lines.len() == 0 {
+                        lines.push("".to_owned());
+                    }
+                    // TODO: properly probe tweet length lim
+                    lines.push(format!("{}/{}", x.len(), 140));
+                    lines.insert(0, "".to_owned());
+                    let mut lines_drawn: u16 = 0;
+                    for line in lines.into_iter().rev() {
+                        print!("{}{}  {}{}{}{}",
+                            cursor::Goto(1, height - 4 - lines_drawn), clear::CurrentLine,
+                            color::Bg(color::Blue), line, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>(), termion::style::Reset
+                        );
+                        lines_drawn += 1;
+                    }
+                    h += (lines_drawn - 3);
+                }
+                Some(DisplayMode::Reply(twid, msg)) => {
+                    let mut lines = into_display_lines(render_twete(&twid, tweeter), width - 2);
+                    lines.push("  --------  ".to_owned());
+                    lines.extend(into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2));
+                    if lines.len() == 0 {
+                        lines.push("".to_owned());
+                    }
+                    // TODO: properly probe tweet length lim
+                    lines.push(format!("{}/{}", msg.len(), 140));
+                    lines.insert(0, "".to_owned());
+                    let mut lines_drawn: u16 = 0;
+                    for line in lines.into_iter().rev() {
+                        print!("{}{}  {}{}{}{}",
+                            cursor::Goto(1, height - 4 - lines_drawn), clear::CurrentLine,
+                            color::Bg(color::Blue), line, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>(), termion::style::Reset
+                        );
+                        lines_drawn += 1;
+                    }
+                    h += (lines_drawn - 3);
+                }
+                Some(_) => { }
+            }
+
             for info in last_few_twevent {
                 let to_draw: Vec<String> = match info {
                     Infos::Tweet(id) => {
                         let pre_split: Vec<String> = render_twete(&id, tweeter);
-                        let split_on_newline: Vec<String> = pre_split.into_iter().flat_map(|x| x.split("\n").map(|x| x.to_owned()).collect::<Vec<String>>()).collect();
-                        let wrapped: Vec<String> = split_on_newline.iter()
-                            .map(|x| x.chars().collect::<Vec<char>>())
-                            .flat_map(|x| x.chunks(_width as usize)
-                                .map(|x| x.into_iter().collect::<String>())
-                                .collect::<Vec<String>>())
-                            .collect();
+                        let total_length: usize = pre_split.iter().map(|x| x.len()).sum();
+                        let wrapped = if total_length <= 1024 {
+                            into_display_lines(pre_split, width)
+                        } else {
+                            vec!["This tweet discarded for your convenience".to_owned()]
+                        };
                         wrapped.into_iter().rev().collect()
                     }
                     Infos::TweetWithContext(id, context) => {
@@ -95,14 +179,34 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         lines.push(context);
                         lines
                     }
-                    Infos::Thread(_ids) => {
-                        let mut lines = vec![format!("{}{}I'd show a thread if I knew how", cursor::Goto(1, height - h), clear::CurrentLine)];
+                    Infos::Thread(ids) => {
+                        let mut tweets: Vec<Vec<String>> = ids.iter().rev().map(|x| into_display_lines(render_twete(x, tweeter), width)).collect();
+                        let last = tweets.pop();
+                        let mut lines = tweets.into_iter().fold(Vec::new(), |mut sum, lines| {
+                            sum.extend(lines);
+                            sum.extend(vec![
+                                "      ^".to_owned(),
+                                "      |".to_owned()
+                            ]);
+                            sum
+                        });
+                        if let Some(last_lines) = last {
+                            lines.extend(last_lines);
+                        }
+                        //let mut lines = vec![format!("{}{}I'd show a thread if I knew how", cursor::Goto(1, height - h), clear::CurrentLine)];
                         lines.push("".to_owned());
 //                        lines.push(format!("link: https://twitter.com/i/web/status/{}", id));
-                        lines
+                        lines.into_iter().rev().collect()
                     },
                     Infos::Event(e) => {
-                        e.clone().render(tweeter).into_iter().rev().collect()
+                        let pre_split = e.clone().render(tweeter);
+                        let total_length: usize = pre_split.iter().map(|x| x.len()).sum();
+                        let wrapped = if total_length <= 1024 {
+                            into_display_lines(pre_split, width)
+                        } else {
+                            vec!["This tweet discarded for your convenience".to_owned()]
+                        };
+                        wrapped.into_iter().rev().collect()
                     },
                     Infos::DM(msg) => {
                         vec![format!("{}{}DM: {}", cursor::Goto(1, height - h), clear::CurrentLine, msg)]
@@ -132,7 +236,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                 print!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
                 h = h + 1;
             }
-            print!("{}", cursor::Goto(2, height - 5));
+            print!("{}", cursor::Goto(2 + 1 + tweeter.current_user.handle.len() as u16 + tweeter.display_info.input_buf.len() as u16, height - 5));
             stdout().flush()?;
         },
         Err(e) => {
