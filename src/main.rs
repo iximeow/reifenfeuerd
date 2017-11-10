@@ -39,13 +39,6 @@ mod tw;
 mod display;
 mod commands;
 
-//Change these values to your real Twitter API credentials
-static consumer_key: &str = "T879tHWDzd6LvKWdYVfbJL4Su";
-static consumer_secret: &str = "OAXXYYIozAZ4vWSmDziI1EMJCKXPmWPFgLbJpB896iIAMIAdpb";
-static token: &str = "629126745-Qt6LPq2kR7w58s7WHzSqcs4CIdiue64kkfYYB7RI";
-static token_secret: &str = "3BI3YC4WVbKW5icpHORWpsTYqYIj5oAZFkrgyIAoaoKnK";
-static lol_auth_token: &str = "641cdf3a4bbddb72c118b5821e8696aee6300a9a";
-
 static STREAMURL: &str = "https://userstream.twitter.com/1.1/user.json?tweet_mode=extended";
 static TWEET_LOOKUP_URL: &str = "https://api.twitter.com/1.1/statuses/show.json?tweet_mode=extended";
 static USER_LOOKUP_URL: &str = "https://api.twitter.com/1.1/users/show.json";
@@ -64,11 +57,11 @@ pub struct Queryer {
 }
 
 impl Queryer {
-    fn do_api_get(&mut self, url: &str) -> Result<serde_json::Value, String> {
-        self.issue_request(signed_api_get(url))
+    fn do_api_get(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.issue_request(signed_api_get(url, app_cred, user_cred))
     }
-    fn do_api_post(&mut self, url: &str) -> Result<serde_json::Value, String> {
-        self.issue_request(signed_api_post(url))
+    fn do_api_post(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.issue_request(signed_api_post(url, app_cred, user_cred))
     }
     /*
     fn do_web_req(&mut self, url: &str) -> Option<serde_json::Value> {
@@ -76,6 +69,10 @@ impl Queryer {
     }*/
     // TODO: make this return the status as well!
     fn issue_request(&mut self, req: hyper::client::Request) -> Result<serde_json::Value, String> {
+        let resp_body = self.raw_issue_request(req);
+        resp_body.and_then(|body| serde_json::from_slice(&body).map_err(|e| e.to_string()))
+    }
+    fn raw_issue_request(&mut self, req: hyper::client::Request) -> Result<Vec<u8>, String> {
         let lookup = self.client.request(req);
 
         let resp: hyper::Response = self.core.run(lookup).unwrap();
@@ -84,18 +81,10 @@ impl Queryer {
         let chunks: Vec<hyper::Chunk> = self.core.run(resp.body().collect()).unwrap();
 
         let resp_body: Vec<u8> = chunks.into_iter().flat_map(|chunk| chunk.into_iter()).collect();
-
-        match serde_json::from_slice(&resp_body) {
-            Ok(value) => {
-                if status != hyper::StatusCode::Ok {
-                    Err(format!("!! Requests returned status: {}\n{}", status, value))
-                } else {
-                    Ok(value)
-                }
-            }
-            Err(e) => {
-                Err(format!("!! Requests returned status: {}\nerror deserializing json: {}", status, e))
-            }
+        if status != hyper::StatusCode::Ok {
+            Err(format!("!! Requests returned status: {} - {:?}", status, std::str::from_utf8(&resp_body)))
+        } else {
+            Ok(resp_body)
         }
     }
 }
@@ -137,15 +126,23 @@ fn signed_web_get(url: &str) -> hyper::client::Request {
 }
 */
 
-fn signed_api_post(url: &str) -> hyper::client::Request {
-    signed_api_req(url, Method::Post)
+fn signed_api_post(url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    signed_api_req_with_token(url, Method::Post, app_cred, user_cred)
 }
 
-fn signed_api_get(url: &str) -> hyper::client::Request {
-    signed_api_req(url, Method::Get)
+fn signed_api_get(url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    signed_api_req_with_token(url, Method::Get, app_cred, user_cred)
 }
 
-fn signed_api_req(url: &str, method: Method) -> hyper::client::Request {
+fn signed_api_req_with_token(url: &str, method: Method, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    inner_signed_api_req(url, method, app_cred, Some(user_cred))
+}
+
+fn signed_api_req(url: &str, method: Method, app_cred: &tw::Credential) -> hyper::client::Request {
+    inner_signed_api_req(url, method, app_cred, None)
+}
+
+fn inner_signed_api_req(url: &str, method: Method, app_cred: &tw::Credential, maybe_user_cred: Option<&tw::Credential>) -> hyper::client::Request {
 //    let params: Vec<(String, String)> = vec![("track".to_string(), "london".to_string())];
     let method_string = match method {
         Method::Get => "GET",
@@ -156,15 +153,21 @@ fn signed_api_req(url: &str, method: Method) -> hyper::client::Request {
     let params: Vec<(String, String)> = vec![];
     let _param_string: String = params.iter().map(|p| p.0.clone() + &"=".to_string() + &p.1).collect::<Vec<String>>().join("&");
 
-    let header = oauthcli::OAuthAuthorizationHeaderBuilder::new(
+    let parsed_url = url::Url::parse(url).unwrap();
+
+    let mut builder = oauthcli::OAuthAuthorizationHeaderBuilder::new(
         method_string,
-        &url::Url::parse(url).unwrap(),
-        consumer_key,
-        consumer_secret,
+        &parsed_url,
+        app_cred.key.to_owned(),
+        app_cred.secret.to_owned(),
         oauthcli::SignatureMethod::HmacSha1,
-    )
-    .token(token, token_secret)
-    .finish();
+    );
+
+    if let Some(user_cred) = maybe_user_cred {
+        builder.token(user_cred.key.to_owned(), user_cred.secret.to_owned());
+    }
+
+    let header = builder.finish();
 
     let mut req = Request::new(method, url.parse().unwrap());
 
@@ -185,14 +188,6 @@ fn main() {
 
     let (ui_tx, mut ui_rx) = chan::sync::<Result<termion::event::Event, std::io::Error>>(0);
 
-    let mut twete_rx = connect_twitter_stream();
-
-    std::thread::spawn(move || {
-        for input in stdin().events() {
-            ui_tx.send(input);
-        }
-    });
-
     // I *would* want to load this before spawning the thread, but..
     // tokio_core::reactor::Inner can't be moved between threads safely
     // and beacuse it's an Option-al field, it might be present
@@ -204,6 +199,14 @@ fn main() {
     let mut tweeter = tw::TwitterCache::load_cache();
 
     println!("Loaded cache!");
+
+    let mut maybe_twete_rx: Option<chan::Receiver<Vec<u8>>> = tweeter.profile.clone().map(|user_creds| connect_twitter_stream(tweeter.app_key.clone(), user_creds));
+
+    std::thread::spawn(move || {
+        for input in stdin().events() {
+            ui_tx.send(input);
+        }
+    });
 
     let c2 = Core::new().unwrap(); // i swear this is not where the botnet lives
     let handle = &c2.handle();
@@ -226,10 +229,10 @@ fn main() {
 
     tcsetattr(0, TCSANOW, &new_termios).unwrap();
     loop {
-        match do_ui(ui_rx, twete_rx, &mut tweeter, &mut queryer) {
-            Some((new_ui_rx, new_twete_rx)) => {
+        match do_ui(ui_rx, maybe_twete_rx, &mut tweeter, &mut queryer) {
+            Some((new_ui_rx, new_maybe_twete_rx)) => {
                 ui_rx = new_ui_rx;
-                twete_rx = new_twete_rx;
+                maybe_twete_rx = new_maybe_twete_rx;
             },
             None => {
                 break;
@@ -266,6 +269,7 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
                 _ => {}
             }
         }
+        // TODO: ctrl+u, ctrl+w
         Event::Key(Key::Char(x)) => {
             match tweeter.display_info.mode.clone() {
                 None => {
@@ -311,61 +315,65 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
     }
 }
 
-fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error>>, twete_rx: chan::Receiver<Vec<u8>>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) -> Option<(chan::Receiver<Result<termion::event::Event, std::io::Error>>, chan::Receiver<Vec<u8>>)> {
+fn handle_twitter_line(line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) {
+    let jsonstr = std::str::from_utf8(&line).unwrap().trim();
+    /* TODO: replace from_str with from_slice */
+    match serde_json::from_str(&jsonstr) {
+        Ok(json) => {
+            tw::handle_message(json, &mut tweeter, &mut queryer);
+            if tweeter.needs_save && tweeter.caching_permitted {
+                tweeter.store_cache();
+            }
+        },
+        Err(e) =>
+            tweeter.display_info.status(format!("Error reading twitter line: {}", jsonstr))
+    }
+}
+
+fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error>>, maybe_twete_rx: Option<chan::Receiver<Vec<u8>>>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) -> Option<(chan::Receiver<Result<termion::event::Event, std::io::Error>>, Option<chan::Receiver<Vec<u8>>>)> {
     loop {
         let ui_rx_a = &ui_rx_orig;
         let ui_rx_b = &ui_rx_orig;
-        chan_select! {
-            twete_rx.recv() -> twete => match twete {
-                Some(line) => {
-                    let jsonstr = std::str::from_utf8(&line).unwrap().trim();
-                    /* TODO: replace from_str with from_slice */
-                    let json: serde_json::Value = serde_json::from_str(&jsonstr).unwrap();
-                    tw::handle_message(json, &mut tweeter, &mut queryer);
-                    if tweeter.needs_save && tweeter.caching_permitted {
-                        tweeter.store_cache();
-                    }
-                }
-                None => {
-                    tweeter.display_info.status("Twitter stream hung up...".to_owned());
-                    chan_select! {
-                        ui_rx_b.recv() -> input => match input {
-                            Some(maybe_event) => {
-                                if let Ok(event) = maybe_event {
-                                    handle_input(event, tweeter, queryer);
-                                } else {
-                                    // stdin closed?
-                                }
-                            }
-                            // twitter stream closed, ui thread closed, uhh..
-                            None => std::process::exit(0)
+        match &maybe_twete_rx {
+            &Some(ref twete_rx) => {
+                chan_select! {
+                    twete_rx.recv() -> twete => match twete {
+                        Some(line) => handle_twitter_line(line, tweeter, queryer),
+                        None => {
+                            tweeter.display_info.status("Twitter stream hung up...".to_owned());
+                            return Some((ui_rx_orig.clone(), None))
                         }
+                    },
+                    ui_rx_a.recv() -> user_input => match user_input {
+                        Some(Ok(event)) => handle_input(event, tweeter, queryer),
+                        Some(Err(_)) => (), /* stdin closed? */
+                        None => return None // UI ded
                     }
                 }
             },
-            ui_rx_a.recv() -> user_input => match user_input {
-                Some(maybe_event) => {
-                    if let Ok(event) = maybe_event {
-                        handle_input(event, tweeter, queryer); // eventually DisplayInfo too, as a separate piece of data...
-                    } else {
-                        // dunno how we'd reach this... stdin closed?
+            &None => {
+                chan_select! {
+                    ui_rx_a.recv() -> user_input => match user_input {
+                        Some(Ok(event)) => handle_input(event, tweeter, queryer),
+                        Some(Err(_)) => (), /* stdin closed? */
+                        None => return None // UI ded
                     }
-                },
-                None => tweeter.display_info.status("UI thread hung up...".to_owned())
+                }
             }
-            // and then we can introduce a channel that just sends a message every 100 ms or so
-            // that acts as a clock!
         }
-
-        match tweeter.state {
-            tw::AppState::Reconnect => return Some((ui_rx_orig.clone(), connect_twitter_stream())),
-            _ => ()
-        };
 
         // one day display_info should be distinct
         match display::paint(tweeter) {
             Ok(_) => (),
             Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
+        };
+
+        match tweeter.state {
+            tw::AppState::Reconnect => {
+                tweeter.state = tw::AppState::View;
+                return Some((ui_rx_orig.clone(), tweeter.profile.clone().map(|creds| connect_twitter_stream(tweeter.app_key.clone(), creds))));
+            }
+            _ => ()
         };
     }
 }
@@ -402,7 +410,7 @@ fn url_encode(s: &str) -> String {
         .replace("]", "%5d")
 }
 
-fn connect_twitter_stream() -> chan::Receiver<Vec<u8>> {
+fn connect_twitter_stream(app_cred: tw::Credential, user_cred: tw::Credential) -> chan::Receiver<Vec<u8>> {
     let (twete_tx, twete_rx) = chan::sync::<Vec<u8>>(0);
 
     std::thread::spawn(move || {
@@ -415,7 +423,7 @@ fn connect_twitter_stream() -> chan::Receiver<Vec<u8>> {
             .connector(connector)
             .build(&core.handle());
 
-        let req = signed_api_get(STREAMURL);
+        let req = signed_api_get(STREAMURL, &app_cred, &user_cred);
         let work = client.request(req).and_then(|res| {
             let status = res.status();
             if status != hyper::StatusCode::Ok {

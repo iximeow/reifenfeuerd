@@ -7,6 +7,7 @@ pub struct Command {
     pub exec: fn(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer)
 }
 
+pub mod auth;
 pub mod show_cache;
 pub mod twete;
 pub mod look_up;
@@ -17,6 +18,8 @@ pub mod follow;
 pub mod thread;
 
 pub static COMMANDS: &[&Command] = &[
+    &auth::AUTH,
+    &auth::PIN,
     &show_cache::SHOW_CACHE,
     &quit::QUIT,
     &look_up::LOOK_UP_USER,

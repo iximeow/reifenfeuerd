@@ -180,6 +180,8 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         lines
                     }
                     Infos::Thread(ids) => {
+                        // TODO: group together thread elements by the same person a little
+                        // better..
                         let mut tweets: Vec<Vec<String>> = ids.iter().rev().map(|x| into_display_lines(render_twete(x, tweeter), width)).collect();
                         let last = tweets.pop();
                         let mut lines = tweets.into_iter().fold(Vec::new(), |mut sum, lines| {

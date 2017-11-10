@@ -92,12 +92,24 @@ pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) 
     twete_text
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Credential {
+    pub key: String,
+    pub secret: String
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct TwitterCache {
     #[serde(skip)]
     pub users: HashMap<String, User>,
     #[serde(skip)]
     pub tweets: HashMap<String, Tweet>,
+    #[serde(skip)]
+    pub WIP_auth: Option<Credential>,
+    pub app_key: Credential,
+    // right now we're stuck assuming one profile.
+    // alts and such will be others here.
+    pub profile: Option<Credential>,
     following: HashSet<String>,
     following_history: HashMap<String, (String, i64)>, // userid:date??
     pub followers: HashSet<String>,
@@ -255,12 +267,18 @@ impl TwitterCache {
     const PROFILE_DIR: &'static str = "cache/";
     const TWEET_CACHE: &'static str = "cache/tweets.json";
     const USERS_CACHE: &'static str = "cache/users.json";
-    const PROFILE_CACHE: &'static str = "cache/profile.json"; // this should involve MY user id..
+    const PROFILE_CACHE: &'static str = "cache/profile.json";
 
     fn new() -> TwitterCache {
         TwitterCache {
             users: HashMap::new(),
             tweets: HashMap::new(),
+            WIP_auth: None,
+            app_key: Credential {
+                key: "".to_owned(),
+                secret: "".to_owned()
+            },
+            profile: None, // this will become a HashMap when multiple profiles are supported
             following: HashSet::new(),
             following_history: HashMap::new(),
             followers: HashSet::new(),
@@ -293,8 +311,19 @@ impl TwitterCache {
         cache.caching_permitted = false;
         cache
     }
+    pub fn add_profile(&mut self, creds: Credential) {
+        self.profile = Some(creds);
+        if self.caching_permitted {
+            self.store_cache();
+        }
+    }
     fn cache_user(&mut self, user: User) {
-        if !self.users.contains_key(&user.id) {
+        let update_cache = match self.users.get(&user.id) {
+            Some(cached_user) => &user != cached_user,
+            None => true
+        };
+
+        if update_cache {
             let mut file =
                 OpenOptions::new()
                     .create(true)
@@ -583,20 +612,32 @@ impl TwitterCache {
 
     fn look_up_user(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         let url = &format!("{}?user_id={}", ::USER_LOOKUP_URL, id);
-        queryer.do_api_get(url)
+        match self.profile {
+            Some(ref user_creds) => queryer.do_api_get(url, &self.app_key, &user_creds),
+            None => Err("No authorized user to conduct lookup".to_owned())
+        }
     }
 
     fn look_up_tweet(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         let url = &format!("{}&id={}", ::TWEET_LOOKUP_URL, id);
-        queryer.do_api_get(url)
+        match self.profile {
+            Some(ref user_creds) => queryer.do_api_get(url, &self.app_key, &user_creds),
+            None => Err("No authorized user to conduct lookup".to_owned())
+        }
     }
 
     pub fn get_settings(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        queryer.do_api_get(::ACCOUNT_SETTINGS_URL)
+        match self.profile {
+            Some(ref user_creds) => queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &self.app_key, &user_creds),
+            None => Err("No authorized user to request settings".to_owned())
+        }
     }
 
     pub fn get_followers(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        queryer.do_api_get(::GET_FOLLOWER_IDS_URL)
+        match self.profile {
+            Some(ref user_creds) => queryer.do_api_get(::GET_FOLLOWER_IDS_URL, &self.app_key, &user_creds),
+            None => Err("No authorized user to request followers".to_owned())
+        }
     }
 
     pub fn set_thread(&mut self, name: String, last_id: u64) -> bool {
