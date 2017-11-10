@@ -1,6 +1,6 @@
 extern crate serde_json;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct User {
     pub id: String,
     pub name: String,

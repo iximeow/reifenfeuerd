@@ -20,7 +20,11 @@ fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                match queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id)) {
+                let result = match tweeter.profile.clone() {
+                    Some(user_creds) => queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id), &tweeter.app_key, &user_creds),
+                    None => Err("No logged in user to delete as".to_owned())
+                };
+                match result {
                     Ok(_) => (),
                     Err(e) => tweeter.display_info.status(e)
                 }
@@ -54,7 +58,11 @@ fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let substituted = ::url_encode(&text);
     if text.len() <= 140 {
-        match queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted)) {
+        let result = match tweeter.profile.clone() {
+            Some(user_creds) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_creds),
+            None => Err("No logged in user to tweet as".to_owned())
+        };
+        match result {
             Ok(_) => (),
             Err(e) => tweeter.display_info.status(e)
         }
@@ -166,7 +174,13 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
         let substituted = ::url_encode(&text);
-        match queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id)) {
+        let result = match tweeter.profile.clone() {
+            Some(user_creds) => {
+                queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id), &tweeter.app_key, &user_creds)
+            },
+            None => Err("No logged in user to tweet as".to_owned())
+        };
+        match result {
             Ok(_) => (),
             Err(e) => tweeter.display_info.status(e)
         }
@@ -200,13 +214,21 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                                 twete.id
                             )
                         );
-                        match queryer.do_api_post(
-                            &format!("{}?status={}&attachment_url={}",
-                                     CREATE_TWEET_URL,
-                                     substituted,
-                                     attachment_url
-                            )
-                        ) {
+                        let result = match tweeter.profile.clone() {
+                            Some(user_creds) => {
+                                queryer.do_api_post(
+                                    &format!("{}?status={}&attachment_url={}",
+                                             CREATE_TWEET_URL,
+                                             substituted,
+                                             attachment_url
+                                    ),
+                                    &tweeter.app_key,
+                                    &user_creds
+                                )
+                            },
+                            None => Err("No logged in user to tweet as".to_owned())
+                        };
+                        match result {
                             Ok(_) => (),
                             Err(e) => tweeter.display_info.status(e)
                         }
@@ -237,7 +259,13 @@ fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) 
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                match queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id)) {
+                let result = match tweeter.profile.clone() {
+                    Some(user_creds) => {
+                        queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id), &tweeter.app_key, &user_creds)
+                    },
+                    None => Err("No logged in user to retweet as".to_owned())
+                };
+                match result {
                     Ok(_) => (),
                     Err(e) => tweeter.display_info.status(e)
                 }
