@@ -363,12 +363,13 @@ pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<S
                     let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap().clone();
                     // and its author
                     let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
-                    result.push(format!("{}  id:{} (rt_id:{}){}{}",
+                    result.push(format!("{}  id {} (rt id {}){}{}",
                         id_color, rt.internal_id, twete.internal_id,
                         rt.reply_to_tweet.clone()
-                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
+                            .map(|id| tweeter.retrieve_tweet(&id)
+                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
+                                .unwrap_or(format!(" reply to {}", id))
                             )
                             .unwrap_or("".to_string()),
                         color::Fg(color::Reset)
@@ -381,12 +382,13 @@ pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<S
                     ));
                 }
                 None => {
-                    result.push(format!("{}  id:{}{}{}",
+                    result.push(format!("{}  id {}{}{}",
                         id_color, twete.internal_id,
                         twete.reply_to_tweet.clone()
-                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
+                            .map(|id| tweeter.retrieve_tweet(&id)
+                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
+                                .unwrap_or(format!(" reply to {}", id))
                             )
                             .unwrap_or("".to_string()),
                         color::Fg(color::Reset)
@@ -406,12 +408,13 @@ pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<S
                 let maybe_qt = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())).map(|x| x.to_owned());
                 if let Some(qt) = maybe_qt {
                     let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap().clone();
-                    result.push(format!("{}    id:{}{}{}",
+                    result.push(format!("{}    id {}{}{}",
                         id_color, qt.internal_id,
                         qt.reply_to_tweet.clone()
-                            .map(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id.to_owned()))
-                                .and_then(|tw| Some(format!(" reply_to:{}", tw.internal_id)))
-                                .unwrap_or(format!(" reply_to:twitter::{}", id))
+                            .map(|id_str| TweetId::Twitter(id.to_owned()))
+                            .map(|id| tweeter.retrieve_tweet(&id)
+                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
+                                .unwrap_or(format!(" reply to {}", id))
                             )
                             .unwrap_or("".to_string()),
                         color::Fg(color::Reset)
