@@ -8,7 +8,8 @@ use commands::Command;
 pub static LOOK_UP_USER: Command = Command {
     keyword: "look_up_user",
     params: 1,
-    exec: look_up_user
+    exec: look_up_user,
+    help_str: "<twitter_user_id>: Look up the user by the specified twitter user ID, display name/handle."
 };
 
 fn look_up_user(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
@@ -23,7 +24,8 @@ fn look_up_user(line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut 
 pub static LOOK_UP_TWEET: Command = Command {
     keyword: "look_up_tweet",
     params: 1,
-    exec: look_up_tweet
+    exec: look_up_tweet,
+    help_str: "<tweet_id>: Look up tweet by the tweet ID. If unknown, try to retrieve it."
 };
 
 // TODO: make this parse a proper tweet id

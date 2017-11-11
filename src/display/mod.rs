@@ -25,7 +25,8 @@ pub enum Infos {
     Thread(Vec<TweetId>),
     Event(tw::events::Event),
     DM(String),
-    User(tw::user::User)
+    User(tw::user::User),
+    Text(Vec<String>)
 }
 
 const COMPOSE_HEIGHT: u16 = 5;
@@ -164,6 +165,10 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
 
             for info in last_few_twevent {
                 let to_draw: Vec<String> = match info {
+                    Infos::Text(lines) => {
+                        let wrapped = into_display_lines(lines, width);
+                        wrapped.into_iter().rev().collect()
+                    }
                     Infos::Tweet(id) => {
                         let pre_split: Vec<String> = render_twete(&id, tweeter);
                         let total_length: usize = pre_split.iter().map(|x| x.len()).sum();
@@ -411,7 +416,7 @@ pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<S
                     result.push(format!("{}    id {}{}{}",
                         id_color, qt.internal_id,
                         qt.reply_to_tweet.clone()
-                            .map(|id_str| TweetId::Twitter(id.to_owned()))
+                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
                             .map(|id| tweeter.retrieve_tweet(&id)
                                 .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
                                 .unwrap_or(format!(" reply to {}", id))

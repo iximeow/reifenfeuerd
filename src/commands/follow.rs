@@ -9,7 +9,8 @@ static UNFOLLOW_URL: &str = "https://api.twitter.com/1.1/friendships/destroy.jso
 pub static UNFOLLOW: Command = Command {
     keyword: "unfl",
     params: 1,
-    exec: unfl
+    exec: unfl,
+    help_str: "<handle>: Unfollow <handle>. No @ prefix in <handle>!"
 };
 
 fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -29,7 +30,8 @@ fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 pub static FOLLOW: Command = Command {
     keyword: "fl",
     params: 1,
-    exec: fl
+    exec: fl,
+    help_str: "<handle>: Follow <handle>. No @ prefix in <handle>!"
 };
 
 fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {

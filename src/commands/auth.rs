@@ -14,7 +14,9 @@ static UNFAV_TWEET_URL: &str = "https://api.twitter.com/1.1/favorites/destroy.js
 pub static AUTH: Command = Command {
     keyword: "auth",
     params: 0,
-    exec: auth
+    exec: auth,
+    // TODO: support account-specific auth? profile name spec?
+    help_str: "Begin PIN-based account auth process. Second step is the `pin` command."
 };
 
 static OAUTH_REQUEST_TOKEN_URL: &str = "https://api.twitter.com/oauth/request_token";
@@ -54,7 +56,8 @@ fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 pub static PIN: Command = Command {
     keyword: "pin",
     params: 1,
-    exec: pin
+    exec: pin,
+    help_str: "<PIN>: Complete account auth. Enter PIN from prior `auth` link to connect an account."
 };
 
 fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {

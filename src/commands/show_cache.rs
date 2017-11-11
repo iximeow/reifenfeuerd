@@ -6,7 +6,8 @@ use commands::Command;
 pub static SHOW_CACHE: Command = Command {
     keyword: "show_cache",
     params: 0,
-    exec: show_cache
+    exec: show_cache,
+    help_str: "Dump all cached info. Probably a bad idea."
 };
 
 fn show_cache(_line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
