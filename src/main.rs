@@ -198,9 +198,14 @@ fn main() {
 
     let mut tweeter = tw::TwitterCache::load_cache();
 
-    println!("Loaded cache!");
+    tweeter.display_info.status("Cache loaded".to_owned());
 
-    let mut maybe_twete_rx: Option<chan::Receiver<Vec<u8>>> = tweeter.profile.clone().map(|user_creds| connect_twitter_stream(tweeter.app_key.clone(), user_creds));
+    let mut maybe_twete_rx = tweeter.profile.clone()
+        .map(|user_creds| {
+            let rx = connect_twitter_stream(tweeter.app_key.clone(), user_creds);
+            tweeter.display_info.status("Twitter stream open".to_owned());
+            rx
+        });
 
     std::thread::spawn(move || {
         for input in stdin().events() {
@@ -228,6 +233,12 @@ fn main() {
     new_termios.c_lflag &= !(ICANON | ECHO);
 
     tcsetattr(0, TCSANOW, &new_termios).unwrap();
+
+    match display::paint(&mut tweeter) {
+        Ok(_) => (),
+        Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
+    };
+
     loop {
         match do_ui(ui_rx, maybe_twete_rx, &mut tweeter, &mut queryer) {
             Some((new_ui_rx, new_maybe_twete_rx)) => {
@@ -317,7 +328,7 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
 
 fn handle_twitter_line(line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) {
     let jsonstr = std::str::from_utf8(&line).unwrap().trim();
-    /* TODO: replace from_str with from_slice */
+    /* TODO: replace from_str with from_slice? */
     match serde_json::from_str(&jsonstr) {
         Ok(json) => {
             tw::handle_message(json, &mut tweeter, &mut queryer);
