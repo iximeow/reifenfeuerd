@@ -9,7 +9,8 @@ use commands::Command;
 pub static FORGET_THREAD: Command = Command {
     keyword: "forget",
     params: 1,
-    exec: forget
+    exec: forget,
+    help_str: "<name>: Discard thread known by <name>. Entirely local to the client."
 };
 
 fn forget(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
@@ -20,7 +21,8 @@ fn forget(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) 
 pub static REMEMBER_THREAD: Command = Command {
     keyword: "remember",
     params: 2,
-    exec: remember
+    exec: remember,
+    help_str: "<tweet_id> <name>: Remember the thread tipped by <tweet_id> as  <name>. Entirely local to the client."
 };
 
 fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
@@ -51,7 +53,8 @@ fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer
 pub static LIST_THREADS: Command = Command {
     keyword: "ls_threads",
     params: 0,
-    exec: ls_threads
+    exec: ls_threads,
+    help_str: "Show all known (local) threads"
 };
 
 fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {

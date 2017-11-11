@@ -380,6 +380,15 @@ fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error
         };
 
         match tweeter.state {
+            tw::AppState::ShowHelp => {
+                let mut help_lines = vec![];
+                for command in commands::COMMANDS {
+                    help_lines.push(format!("{} {}", command.keyword, command.help_str));
+                }
+                tweeter.display_info.infos.push(display::Infos::Text(help_lines));
+                display::paint(tweeter).unwrap();
+                tweeter.state = tw::AppState::View;
+            }
             tw::AppState::Reconnect => {
                 tweeter.state = tw::AppState::View;
                 return Some((ui_rx_orig.clone(), tweeter.profile.clone().map(|creds| connect_twitter_stream(tweeter.app_key.clone(), creds))));

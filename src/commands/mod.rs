@@ -4,9 +4,11 @@ use ::Queryer;
 pub struct Command {
     pub keyword: &'static str,
     pub params: u8,
-    pub exec: fn(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer)
+    pub exec: fn(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer),
+    pub help_str: &'static str
 }
 
+pub mod help;
 pub mod auth;
 pub mod show_cache;
 pub mod twete;
@@ -18,6 +20,7 @@ pub mod follow;
 pub mod thread;
 
 pub static COMMANDS: &[&Command] = &[
+    &help::HELP,
     &auth::AUTH,
     &auth::PIN,
     &show_cache::SHOW_CACHE,
@@ -39,19 +42,4 @@ pub static COMMANDS: &[&Command] = &[
     &thread::FORGET_THREAD,
     &thread::REMEMBER_THREAD,
     &thread::LIST_THREADS
-    /*
-        &QUIT,
-        &LOOK_UP_USER,
-        &LOOK_UP_TWEET,
-        &VIEW,
-        &UNFAV,
-        &FAV,
-        &DEL,
-        &TWETE,
-        &QUOTE,
-        &RETWETE,
-        &REP,
-        &THREAD
-    ];
-    */
 ];

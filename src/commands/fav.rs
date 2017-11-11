@@ -11,7 +11,8 @@ static UNFAV_TWEET_URL: &str = "https://api.twitter.com/1.1/favorites/destroy.js
 pub static UNFAV: Command = Command {
     keyword: "unfav",
     params: 1,
-    exec: unfav
+    exec: unfav,
+    help_str: "<tweet_id>: Unfavorite a tweet."
 };
 
 fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -40,7 +41,8 @@ fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 pub static FAV: Command = Command {
     keyword: "fav",
     params: 1,
-    exec: fav
+    exec: fav,
+    help_str: "<tweet_id>: Favorite a tweet."
 };
 
 fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {

@@ -25,6 +25,7 @@ use self::user::User;
 
 pub enum AppState {
     Shutdown,
+    ShowHelp,
     Reconnect,
     Compose,
     View
