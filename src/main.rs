@@ -383,7 +383,15 @@ fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error
             tw::AppState::Reconnect => {
                 tweeter.state = tw::AppState::View;
                 return Some((ui_rx_orig.clone(), tweeter.profile.clone().map(|creds| connect_twitter_stream(tweeter.app_key.clone(), creds))));
-            }
+            },
+            tw::AppState::Shutdown => {
+                tweeter.display_info.status("Saving cache...".to_owned());
+                display::paint(tweeter).unwrap();
+                tweeter.store_cache();
+                tweeter.display_info.status("Bye bye!".to_owned());
+                display::paint(tweeter).unwrap();
+                return None
+            },
             _ => ()
         };
     }

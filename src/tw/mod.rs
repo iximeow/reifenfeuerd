@@ -23,6 +23,7 @@ pub mod user;
 use self::user::User;
 
 pub enum AppState {
+    Shutdown,
     Reconnect,
     Compose,
     View
@@ -349,18 +350,20 @@ impl TwitterCache {
         }
     }
     pub fn store_cache(&mut self) {
-        if Path::new(TwitterCache::PROFILE_DIR).is_dir() {
-            let profile = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .append(false)
-                .open(TwitterCache::PROFILE_CACHE)
-                .unwrap();
-            serde_json::to_writer(profile, self).unwrap();
-        } else {
-            self.display_info.status("No cache dir exists...".to_owned());
+        if self.caching_permitted {
+            if Path::new(TwitterCache::PROFILE_DIR).is_dir() {
+                let profile = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .append(false)
+                    .truncate(true) // since this one can become smaller, lop off trailing characters
+                    .open(TwitterCache::PROFILE_CACHE)
+                    .unwrap();
+                serde_json::to_writer(profile, self).unwrap();
+            } else {
+                self.display_info.status("No cache dir exists...".to_owned());
+            }
         }
-        // store cache
     }
     fn number_and_insert_tweet(&mut self, mut tw: Tweet) {
         if !self.tweets.contains_key(&tw.id.to_owned()) {
