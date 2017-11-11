@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::fmt;
 use std::str::FromStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -165,6 +166,25 @@ pub enum TweetId {
     Dated(String, u64), // 20171002:number
     Bare(u64),          // ::number
     Twitter(String)     // twitter::number
+}
+
+impl fmt::Display for TweetId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &TweetId::Today(ref id) => {
+                write!(f, "{}", id)
+            },
+            &TweetId::Dated(ref date, ref id) => {
+                write!(f, "{}:{}", date, id)
+            },
+            &TweetId::Bare(ref id) => {
+                write!(f, ":{}", id)
+            },
+            &TweetId::Twitter(ref id) => {
+                write!(f, "twitter:{}", id)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
