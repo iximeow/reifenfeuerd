@@ -61,19 +61,13 @@ fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 
 pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let substituted = ::url_encode(&text);
-    if text.len() <= 140 {
-        let result = match tweeter.profile.clone() {
-            Some(user_creds) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_creds),
-            None => Err("No logged in user to tweet as".to_owned())
-        };
-        match result {
-            Ok(_) => (),
-            Err(e) => tweeter.display_info.status(e)
-        }
-    } else {
-        // TODO: this 140 is maybe sometimes 280.. :)
-        // and see if weighted_character_count still does things?
-        tweeter.display_info.status(format!("tweet is too long: {}/140 chars", text.len()));
+    let result = match tweeter.profile.clone() {
+        Some(user_creds) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_creds),
+        None => Err("No logged in user to tweet as".to_owned())
+    };
+    match result {
+        Ok(_) => (),
+        Err(e) => tweeter.display_info.status(e)
     }
 }
 

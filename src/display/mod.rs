@@ -71,7 +71,7 @@ impl DisplayInfo {
 }
 
 /*
- * wraps x so each line is indentation or fewer characters, after splitting by \n.
+ * wraps x so each line is width or fewer characters, after splitting by \n.
  */
 fn into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
     let split_on_newline: Vec<String> = x.into_iter()
