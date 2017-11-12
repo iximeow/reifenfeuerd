@@ -9,6 +9,7 @@ pub static HELP: Command = Command {
     keyword: "help",
     params: 0,
     exec: help,
+    param_str: "",
     help_str: "This help prompt."
 };
 

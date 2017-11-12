@@ -381,9 +381,27 @@ fn do_ui(ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error
 
         match tweeter.state {
             tw::AppState::ShowHelp => {
-                let mut help_lines = vec![];
+                let mut help_lines: Vec<String> = vec![
+                    "  Tweets",
+                    " ",
+                    "Tweets are identified in four (really, three) ways:",
+                    "  twitter:1235     - there's no local copy for it, when you look it up I'll have to ask Twitter for it.",
+                    // TODO:
+                    "  YYYYMMDD:NNNN    - NNNN'th tweet on YYYYMMDD. Numbered as I got them, not by date tweet was made. For example, 20170803:NNNN. NOTE: not currently well supported. Don't even try to use.",
+                    "  :NNNN            - NNNN'th tweet since the first I saw.",
+                    // TODO:
+                    "  NNNN             - NNNN'th tweet of today. Again, numbered by the order I saw it. NOTE: currently this isn't well supported. Use the :ID format above with the same number for now",
+                    "    (ex: you want to reply to a tweet `id 1234`, do `rep :1234`, with :, rather than without)",
+                    " ",
+                    "Tweets can be made immediately by providing the text as part of a command,",
+                    "  (like `t hello, world!`)",
+                    "or in \"compose mode\" with relevant context shown. If you end up in compose mode and want to get back to a normal prompt, press escape.",
+                    " ",
+                    "  Commands",
+                    " "
+                ].into_iter().map(|x| x.to_owned()).collect();
                 for command in commands::COMMANDS {
-                    help_lines.push(format!("{} {}", command.keyword, command.help_str));
+                    help_lines.push(format!("{}{: <width$} {}", command.keyword, command.param_str, command.help_str, width=(35 - command.keyword.len())));
                 }
                 tweeter.display_info.infos.push(display::Infos::Text(help_lines));
                 display::paint(tweeter).unwrap();

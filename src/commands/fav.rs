@@ -12,7 +12,8 @@ pub static UNFAV: Command = Command {
     keyword: "unfav",
     params: 1,
     exec: unfav,
-    help_str: "<tweet_id>: Unfavorite a tweet."
+    param_str: " <tweet_id>",
+    help_str: "Unfavorite a tweet."
 };
 
 fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -42,7 +43,8 @@ pub static FAV: Command = Command {
     keyword: "fav",
     params: 1,
     exec: fav,
-    help_str: "<tweet_id>: Favorite a tweet."
+    param_str: "<tweet_id>",
+    help_str: "Favorite a tweet."
 };
 
 fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {

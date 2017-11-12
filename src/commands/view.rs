@@ -11,7 +11,8 @@ pub static VIEW: Command = Command {
     keyword: "view",
     params: 1,
     exec: view,
-    help_str: "<tweet_id>: Display tweet <tweet_id> with a reference URL"
+    param_str: " <tweet_id>",
+    help_str: "Display tweet <tweet_id> with a reference URL"
 };
 
 fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
@@ -36,7 +37,8 @@ pub static VIEW_THREAD: Command = Command {
     keyword: "view_tr",
     params: 1,
     exec: view_tr,
-    help_str: "<tweet_id>: Display whole thread leading to <tweet_id>, reference URLs for each"
+    param_str: " <tweet_id>",
+    help_str: "Display whole thread leading to <tweet_id>, reference URLs for each"
 };
 
 fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -67,6 +69,7 @@ pub static VIEW_THREAD_FORWARD: Command = Command {
     keyword: "viewthread+",
     params: 1,
     exec: view_tr_forward,
+    param_str: "",
     help_str: "help me make this work"
 };
 

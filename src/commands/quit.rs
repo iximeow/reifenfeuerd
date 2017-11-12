@@ -9,6 +9,7 @@ pub static QUIT: Command = Command {
     keyword: "q",
     params: 0,
     exec: quit,
+    param_str: "",
     // TODO: app name
     help_str: "Gracefully exit this thing"
 };

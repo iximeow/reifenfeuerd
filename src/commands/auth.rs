@@ -15,6 +15,7 @@ pub static AUTH: Command = Command {
     keyword: "auth",
     params: 0,
     exec: auth,
+    param_str: "",
     // TODO: support account-specific auth? profile name spec?
     help_str: "Begin PIN-based account auth process. Second step is the `pin` command."
 };
@@ -57,7 +58,8 @@ pub static PIN: Command = Command {
     keyword: "pin",
     params: 1,
     exec: pin,
-    help_str: "<PIN>: Complete account auth. Enter PIN from prior `auth` link to connect an account."
+    param_str: " <PIN>",
+    help_str: "Complete account auth. Enter PIN from prior `auth` link to connect an account."
 };
 
 fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
