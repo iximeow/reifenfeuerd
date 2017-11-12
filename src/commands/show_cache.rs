@@ -7,6 +7,7 @@ pub static SHOW_CACHE: Command = Command {
     keyword: "show_cache",
     params: 0,
     exec: show_cache,
+    param_str: "",
     help_str: "Dump all cached info. Probably a bad idea."
 };
 

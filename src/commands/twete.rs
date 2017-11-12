@@ -13,7 +13,8 @@ pub static DEL: Command = Command {
     keyword: "del",
     params: 1,
     exec: del,
-    help_str: "<tweet_id>: Delete tweet <tweet_id>"
+    param_str: " <tweet_id>",
+    help_str: "Delete tweet <tweet_id>"
 };
 
 fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -43,6 +44,7 @@ pub static TWETE: Command = Command {
     keyword: "t",
     params: 0,
     exec: twete,
+    param_str: "",
     help_str: "Enter tweet compose mode."
 };
 
@@ -79,6 +81,7 @@ pub static THREAD: Command = Command {
     keyword: "thread",
     params: 2,
     exec: thread,
+    param_str: " <tweet_id> <response>", // should be optional..
     // TODO: make it actually do this..
     help_str: "Enter compose mode, appending to a thread"
 };
@@ -122,8 +125,9 @@ pub static REP: Command = Command {
     keyword: "rep",
     params: 1,
     exec: rep,
+    param_str: " <tweet_id>",
     // TODO: doc immediate reply mode
-    help_str: "<tweet_id>: Enter compose mode to reply to <tweet_id>"
+    help_str: "Enter compose mode to reply to <tweet_id>"
 };
 
 fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -199,7 +203,8 @@ pub static QUOTE: Command = Command {
     keyword: "qt",
     params: 2,
     exec: quote,
-    help_str: "<tweet_id> <text>: Quote <tweet_id> with context <text>"
+    param_str: " <tweet_id> <text>",
+    help_str: "Quote <tweet_id> with context <text>"
 };
 
 fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
@@ -259,7 +264,8 @@ pub static RETWETE: Command = Command {
     keyword: "rt",
     params: 1,
     exec: retwete,
-    help_str: "<tweet_id>: Retweet <tweet_id>"
+    param_str: " <tweet_id>",
+    help_str: "Retweet <tweet_id>"
 };
 
 fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
