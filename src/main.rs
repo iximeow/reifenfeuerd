@@ -324,7 +324,7 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
             }
         },
         Event::Key(Key::PageUp) => {
-            tweeter.display_info.infos_seek += 1;
+            tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_add(1);
         }
         Event::Key(Key::PageDown) => {
             tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_sub(1);
