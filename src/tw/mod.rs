@@ -406,12 +406,20 @@ impl TwitterCache {
                             let mut cache: TwitterCache = result;
                             cache.tweets = HashMap::new();
                             for line in BufReader::new(File::open(TwitterCache::TWEET_CACHE).unwrap()).lines() {
-                                let t: Tweet = serde_json::from_str(&line.unwrap()).unwrap();
-                                cache.number_and_insert_tweet(t);
+                                let unwrapped_line = line.unwrap();
+                                let t: Result<Tweet, serde_json::Error> = serde_json::from_str(&unwrapped_line.clone());
+                                match t {
+                                    Ok(tweet) => cache.number_and_insert_tweet(tweet),
+                                    Err(e) => panic!(format!("{} on line {} - {:?}", e, cache.tweets.len(), unwrapped_line.clone()))
+                                };
                             }
                             for line in BufReader::new(File::open(TwitterCache::USERS_CACHE).unwrap()).lines() {
-                                let u: User = serde_json::from_str(&line.unwrap()).unwrap();
-                                cache.users.insert(u.id.to_owned(), u);
+                                let unwrapped_line = line.unwrap();
+                                let u: Result<User, serde_json::Error> = serde_json::from_str(&unwrapped_line.clone());
+                                match u {
+                                    Ok(user) => cache.users.insert(user.id.to_owned(), user),
+                                    Err(e) => panic!(format!("{} on line {} - {:?}", e, cache.users.len(), unwrapped_line.clone()))
+                                };
                             }
                             cache.caching_permitted = true;
                             cache.needs_save = false;
