@@ -272,6 +272,18 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
         }
         // would Shift('\n') but.. that doesn't exist.
         // would Ctrl('\n') but.. that doesn't work.
+        Event::Key(Key::Ctrl('u')) => {
+             match tweeter.display_info.mode.clone() {
+                None => tweeter.display_info.input_buf = vec![],
+                Some(display::DisplayMode::Compose(msg)) => {
+                    // TODO: clear only one line?
+                    tweeter.display_info.mode = Some(display::DisplayMode::Compose("".to_owned()));
+                }
+                Some(display::DisplayMode::Reply(twid, msg)) => {
+                    tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, "".to_owned()));
+                }
+            }
+       }
         Event::Key(Key::Ctrl('n')) => {
             match tweeter.display_info.mode.clone() {
                 Some(display::DisplayMode::Compose(msg)) => {
