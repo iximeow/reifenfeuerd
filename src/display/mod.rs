@@ -217,7 +217,9 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         wrapped.into_iter().rev().collect()
                     },
                     Infos::DM(msg) => {
-                        vec![format!("{}{}DM: {}", cursor::Goto(1, height - h), clear::CurrentLine, msg)]
+                        let mut lines = vec![format!("{}{}{} DM:", cursor::Goto(1, height - h), clear::CurrentLine, "from")];
+                        lines.push(msg);
+                        lines
                     }
                     Infos::User(user) => {
                         vec![
