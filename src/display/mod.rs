@@ -108,8 +108,9 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
             }
             // draw status lines
             // draw tweets
-            let last_twevent = tweeter.display_info.infos.len().saturating_sub(height as usize - 4).saturating_sub(tweeter.display_info.infos_seek as usize);
-            let last_few_twevent: Vec<Infos> = tweeter.display_info.infos[last_twevent..].iter().map(|x| x.clone()).rev().collect::<Vec<Infos>>();
+            let last_tail_twevent = tweeter.display_info.infos.len().saturating_sub(tweeter.display_info.infos_seek as usize);
+            let first_tail_twevent = last_tail_twevent.saturating_sub(height as usize - 4);
+            let last_few_twevent: Vec<Infos> = tweeter.display_info.infos[first_tail_twevent..last_tail_twevent].iter().map(|x| x.clone()).rev().collect::<Vec<Infos>>();
 
             let mut h = tweeter.display_info.ui_height();
 
