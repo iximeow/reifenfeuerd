@@ -117,14 +117,18 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
             /*
              * draw in whatever based on mode...
              */
-            match tweeter.display_info.mode.clone() {
+            let (cursor_x, cursor_y) = match tweeter.display_info.mode.clone() {
                 None => {
                     print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
                     print!("{}{}@{}>{}", cursor::Goto(1, height - 5), clear::CurrentLine, tweeter.current_user.handle, tweeter.display_info.input_buf.clone().into_iter().collect::<String>());
                     print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
+                    ((1 + tweeter.current_user.handle.len() + 2 + tweeter.display_info.input_buf.len()) as u16, height as u16 - 5)
                 }
                 Some(DisplayMode::Compose(x)) => {
-                    let mut lines: Vec<String> = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width - 2);
+                    let mut lines: Vec<String> = vec![];
+                    let msg_lines = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width);
+                    let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
+                    lines.extend(msg_lines);
                     if lines.len() == 0 {
                         lines.push("".to_owned());
                     }
@@ -140,14 +144,17 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         lines_drawn += 1;
                     }
                     h += (lines_drawn - 3);
+                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
                     let mut lines = into_display_lines(render_twete(&twid, tweeter), width - 2);
                     lines.push("  --------  ".to_owned());
-                    lines.extend(into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2));
-                    if lines.len() == 0 {
+                    let msg_lines = into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2);
+                    let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
+                    if msg_lines.len() == 0 {
                         lines.push("".to_owned());
                     }
+                    lines.extend(msg_lines);
                     // TODO: properly probe tweet length lim
                     lines.push(format!("{}/{}", msg.len(), 140));
                     lines.insert(0, "".to_owned());
@@ -160,9 +167,9 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         lines_drawn += 1;
                     }
                     h += (lines_drawn - 3);
+                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
-                Some(_) => { }
-            }
+            };
 
             for info in last_few_twevent {
                 let to_draw: Vec<String> = match info {
@@ -231,22 +238,20 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                     print!("{}{}{}", cursor::Goto(1, height - h), clear::CurrentLine, line);
                     h = h + 1;
                     if h >= height {
-                        print!("{}", cursor::Goto(2, height - 6));
-                        return stdout().flush();
+                        break;
                     }
                 }
                 print!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
                 h = h + 1;
                 if h >= height {
-                    print!("{}", cursor::Goto(2, height - 6));
-                    return stdout().flush();
+                    break;
                 }
             }
             while h < height {
                 print!("{}{}", cursor::Goto(1, height - h), clear::CurrentLine);
                 h = h + 1;
             }
-            print!("{}", cursor::Goto(2 + 1 + tweeter.current_user.handle.len() as u16 + tweeter.display_info.input_buf.len() as u16, height - 5));
+            print!("{}", cursor::Goto(cursor_x, cursor_y));
             stdout().flush()?;
         },
         Err(e) => {
