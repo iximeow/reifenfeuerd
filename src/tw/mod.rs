@@ -78,20 +78,6 @@ pub fn full_twete_text(twete: &serde_json::map::Map<String, serde_json::Value>) 
         .replace("&gt;", ">")
         .replace("&lt;", "<");
 
-    for url in twete["entities"]["urls"].as_array().unwrap() {
-        let display_url = url["url"].as_str().unwrap();
-        let expanded_url = url["expanded_url"].as_str().unwrap();
-        if expanded_url.len() < 200 {
-            if let Some(twid) = quoted_tweet_id {
-                if expanded_url.ends_with(twid) {
-                    twete_text = twete_text.replace(display_url, "");
-                    continue;
-                }
-            }
-            twete_text = twete_text.replace(display_url, expanded_url);
-        }
-    }
-
     twete_text
 }
 

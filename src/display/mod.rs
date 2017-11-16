@@ -126,7 +126,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                 }
                 Some(DisplayMode::Compose(x)) => {
                     let mut lines: Vec<String> = vec![];
-                    let msg_lines = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width);
+                    let msg_lines = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
                     lines.extend(msg_lines);
                     if lines.len() == 0 {
@@ -147,7 +147,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                     (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
-                    let mut lines = into_display_lines(render_twete(&twid, tweeter), width - 2);
+                    let mut lines = render_twete(&twid, tweeter, Some(width));
                     lines.push("  --------  ".to_owned());
                     let msg_lines = into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
@@ -178,7 +178,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         wrapped.into_iter().rev().collect()
                     }
                     Infos::Tweet(id) => {
-                        let pre_split: Vec<String> = render_twete(&id, tweeter);
+                        let pre_split: Vec<String> = render_twete(&id, tweeter, Some(width));
                         let total_length: usize = pre_split.iter().map(|x| x.len()).sum();
                         let wrapped = if total_length <= 1024 {
                             into_display_lines(pre_split, width)
@@ -188,14 +188,14 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         wrapped.into_iter().rev().collect()
                     }
                     Infos::TweetWithContext(id, context) => {
-                        let mut lines = render_twete(&id, tweeter).iter().map(|x| x.to_owned()).rev().collect::<Vec<String>>();
+                        let mut lines = render_twete(&id, tweeter, Some(width)).iter().map(|x| x.to_owned()).rev().collect::<Vec<String>>();
                         lines.push(context);
                         lines
                     }
                     Infos::Thread(ids) => {
                         // TODO: group together thread elements by the same person a little
                         // better..
-                        let mut tweets: Vec<Vec<String>> = ids.iter().rev().map(|x| into_display_lines(render_twete(x, tweeter), width)).collect();
+                        let mut tweets: Vec<Vec<String>> = ids.iter().rev().map(|x| render_twete(x, tweeter, Some(width))).collect();
                         let last = tweets.pop();
                         let mut lines = tweets.into_iter().fold(Vec::new(), |mut sum, lines| {
                             sum.extend(lines);
@@ -210,7 +210,6 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         }
                         //let mut lines = vec![format!("{}{}I'd show a thread if I knew how", cursor::Goto(1, height - h), clear::CurrentLine)];
                         lines.push("".to_owned());
-//                        lines.push(format!("link: https://twitter.com/i/web/status/{}", id));
                         lines.into_iter().rev().collect()
                     },
                     Infos::Event(e) => {
@@ -296,13 +295,13 @@ impl Render for tw::events::Event {
                     let user = tweeter.retrieve_user(&user_id).unwrap();
                     result.push(format!("  quoted_tweet    : {} (@{})", user.name, user.handle));
                 }
-                render_twete(&TweetId::Twitter(twete_id), tweeter);
+                render_twete(&TweetId::Twitter(twete_id), tweeter, None);
             }
             tw::events::Event::Deleted { user_id, twete_id } => {
                 if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle).map(|x| x.clone()) {
                     if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned())).map(|x| x.clone()) {
                         result.push(format!("-------------DELETED------------------"));
-                        result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter));
+                        result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
                         result.push(format!("-------------DELETED------------------"));
                     } else {
                         result.push(format!("dunno what, but do know who: {} - {}", user_id, handle));
@@ -317,7 +316,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("  +rt_rt    : {} (@{})", user.name, user.handle));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
             },
             tw::events::Event::Fav_RT { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -326,7 +325,7 @@ impl Render for tw::events::Event {
                 } else {
                     result.push(format!("  +rt_fav but don't know who {} is", user_id));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
             },
             tw::events::Event::Fav { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -334,7 +333,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("{}  +fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset)));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
             },
             tw::events::Event::Unfav { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -342,7 +341,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("{}  -fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset)));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
             },
             tw::events::Event::Followed { user_id } => {
                 result.push("---------------------------------".to_string());
@@ -363,88 +362,127 @@ impl Render for tw::events::Event {
     }
 }
 
-pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache) -> Vec<String> {
+// really dumb...
+fn pad_lines(lines: Vec<String>, padding: &str) -> Vec<String> {
+    lines.into_iter().map(|x| format!("{}{}", padding, x)).collect()
+}
+
+pub fn render_twete(twete_id: &TweetId, tweeter: &mut tw::TwitterCache, width: Option<u16>) -> Vec<String> {
+    let mut lines = render_twete_no_recurse(twete_id, tweeter, width);
+    match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
+        Some(twete) => {
+            if let Some(ref qt_id) = twete.quoted_tweet_id {
+                lines.extend(pad_lines(render_twete_no_recurse(&TweetId::Twitter(qt_id.to_owned()), tweeter, width.map(|x| x - 4)), "    "));
+            }
+        },
+        None => { /* awkward */ }
+    }
+    lines
+}
+
+pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &mut tw::TwitterCache, width: Option<u16>) -> Vec<String> {
+    // ~~ reactive ~~ layout if the terminal isn't wide enough? for now just wrap to passed width
     let mut result = Vec::new();
     let id_color = color::Fg(color::Rgb(180, 80, 40));
     match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
         Some(twete) => {
             // if we got the tweet, the API gave us the user too
             let user = tweeter.retrieve_user(&twete.author_id).map(|x| x.clone()).unwrap();
-            match twete.rt_tweet {
-                Some(ref rt_id) => {
-                    // same for a retweet
-                    let rt = tweeter.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())).unwrap().clone();
-                    // and its author
-                    let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
-                    result.push(format!("{}  id {} (rt id {}){}{}",
-                        id_color, rt.internal_id, twete.internal_id,
-                        rt.reply_to_tweet.clone()
-                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
-                            .map(|id| tweeter.retrieve_tweet(&id)
-                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
-                                .unwrap_or(format!(" reply to {}", id))
-                            )
-                            .unwrap_or("".to_string()),
-                        color::Fg(color::Reset)
-                    ));
-                    result.push(format!("  {}{}{} ({}@{}{}) via {}{}{} ({}@{}{}) RT:",
-                        color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset),
-                        color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset),
-                        color_for(&user.handle), user.name, color::Fg(color::Reset),
-                        color_for(&user.handle), user.handle, color::Fg(color::Reset)
-                    ));
-                }
-                None => {
-                    result.push(format!("{}  id {}{}{}",
-                        id_color, twete.internal_id,
-                        twete.reply_to_tweet.clone()
-                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
-                            .map(|id| tweeter.retrieve_tweet(&id)
-                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
-                                .unwrap_or(format!(" reply to {}", id))
-                            )
-                            .unwrap_or("".to_string()),
-                        color::Fg(color::Reset)
-                    ));
-                    result.push(format!("  {}{}{} ({}@{}{})",
-                        color_for(&user.handle), user.name, color::Fg(color::Reset),
-                        color_for(&user.handle), user.handle, color::Fg(color::Reset)
-                    ));
-                }
+            /*
+             * two cases here:
+             * A: just a tweet, no retweet. So, show:
+             *      id <tweet_id>
+             *  . . . ok.
+             *
+             * B: X retweeted Y. We got the retweet Z, so "id" is the retweet id.
+             * Want to show:
+             *      id Y (rt id Z)
+             *      <Y author> via <Z RTer>
+             *
+             * which means for B, "id" is ".rt_tweet"!
+             */
+            let (tweet_id, maybe_rt_id) = twete.rt_tweet
+                .clone()
+                .map(|rt_id| (TweetId::Twitter(rt_id), Some(TweetId::Twitter(twete.id.to_owned())))).unwrap_or((TweetId::Twitter(twete.id.to_owned()), None));
+            // retrieve_* taking mut tweeter REALLY messes stuff up.
+            let tweet = tweeter.retrieve_tweet(&tweet_id).unwrap().clone();
+            let tweet_author = tweeter.retrieve_user(&tweet.author_id).unwrap().clone();
+
+            // now we've unfurled it so id is the original tweet either way, maybe_rt_id is the id
+            // of the retweeter tweet if it's there
+
+            let mut id_string = format!("{}id {}", id_color, tweet.internal_id);
+            let mut author_string = format!("{}{}{} ({}@{}{})", color_for(&tweet_author.handle), tweet_author.name, color::Fg(color::Reset), color_for(&tweet_author.handle), tweet_author.handle, color::Fg(color::Reset));
+
+            if let Some(reply_id) = tweet.reply_to_tweet.clone() {
+                let reply_tweet_id = match tweeter.retrieve_tweet(&TweetId::Twitter(reply_id.to_owned())) {
+                    Some(reply_tweet) => TweetId::Bare(reply_tweet.internal_id),
+                    None => TweetId::Twitter(reply_id)
+                };
+                id_string.push_str(&format!(" reply to {}", reply_tweet_id))
             }
 
-            result.extend(
-                format!("      {}", twete.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n      ")).split("\n").map(|x| x.to_owned())
-            );
-
-            if let Some(ref qt_id) = twete.quoted_tweet_id {
-                let maybe_qt = tweeter.retrieve_tweet(&TweetId::Twitter(qt_id.to_owned())).map(|x| x.to_owned());
-                if let Some(qt) = maybe_qt {
-                    let qt_author = tweeter.retrieve_user(&qt.author_id).unwrap().clone();
-                    result.push(format!("{}    id {}{}{}",
-                        id_color, qt.internal_id,
-                        qt.reply_to_tweet.clone()
-                            .map(|id_str| TweetId::Twitter(id_str.to_owned()))
-                            .map(|id| tweeter.retrieve_tweet(&id)
-                                .and_then(|tw| Some(format!(" reply to {}", tw.internal_id)))
-                                .unwrap_or(format!(" reply to {}", id))
-                            )
-                            .unwrap_or("".to_string()),
-                        color::Fg(color::Reset)
-                    ));
-                    result.push(format!(
-                        "    {}{}{} ({}@{}{})",
-                        color_for(&qt_author.handle), qt_author.name, color::Fg(color::Reset),
-                        color_for(&qt_author.handle), qt_author.handle, color::Fg(color::Reset)
-                    ));
-                    result.push(format!(
-                        "        {}",
-                        qt.text.replace("\r", "\\r").split("\n").collect::<Vec<&str>>().join("\n        ")
-                    ));
-                } else {
-                    result.push(format!("    << don't have quoted tweet! >>"));
-                }
+            if let Some(rt_id) = maybe_rt_id {
+                let rt = tweeter.retrieve_tweet(&rt_id).unwrap().clone();
+                let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
+                id_string.push_str(&format!(" (rt id {})", rt.internal_id));
+                author_string.push_str(&format!(" via {}{}{} ({}@{}{}) RT", color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset), color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset)));
             }
+
+            id_string.push_str(&format!("{}", color::Fg(color::Reset)));
+
+            result.push(id_string);
+            result.push(author_string);
+
+            let mut original_lines: Vec<String> = twete.text
+//                .replace("\r", "\\r")
+                .split("\n").map(|line| line.replace("\r", "\\r")).collect();
+
+            let mut urls_to_include: Vec<&str> = vec![];
+            let urls_replaced = original_lines
+                .into_iter()
+                .map(|line| {
+                    let mut result: String = line.to_owned();
+                    for elem in tweet.urls.iter() {
+                        if (result.ends_with(elem.0) || result.ends_with(elem.1)) && twete.quoted_tweet_id.clone().map(|id| elem.1.ends_with(&id)).unwrap_or(false) {
+                            // replace with nothing! this dumb url is the quoted tweet url.
+                            if result.ends_with(elem.0) {
+                                result = result.replace(&format!(" {}", elem.0), "");
+                            } else {
+                                result = result.replace(&format!(" {}", elem.1), "");
+                            }
+                        } else {
+                            if line.contains(elem.0) {
+                                result = result.replace(elem.0, &format!("[{}]", urls_to_include.len()));
+                                urls_to_include.push(elem.0);
+                            }
+                        }
+                    }
+                    result
+                })
+                .collect();
+
+            let renderable_lines = match width {
+                Some(width) => {
+                    let mut text = pad_lines(into_display_lines(urls_replaced, width - 2), "  ");
+                    for (i, short_url) in urls_to_include.into_iter().enumerate() {
+                        let expanded = &tweet.urls[short_url];
+                        // elem.0 is short url, elem.1 is expanded url
+                        // TODO: can panic if width is really small
+                        if expanded.len() < (width - 9) as usize { // "[XX]: " is 6 + some padding space?
+                            text.push(format!("[{}]: {}", i, expanded));
+                        } else {
+                            // TODO: try to just show domain, THEN fall back to just a link if the
+                            // domain is too long
+                            text.push(format!("[{}]: {}", i, short_url));
+                        }
+                    }
+                    text
+                },
+                None => urls_replaced
+            };
+
+            result.extend(renderable_lines);
         },
         None => {
             result.push(format!("No such tweet: {:?}", twete_id));

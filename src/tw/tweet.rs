@@ -1,5 +1,7 @@
 extern crate serde_json;
 
+use std::collections::HashMap;
+
 use tw::user::User;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -8,6 +10,9 @@ pub struct Tweet {
     pub author_id: String,
     pub text: String,
     pub created_at: String,     // lol
+    #[serde(skip_serializing_if="HashMap::is_empty")]
+    #[serde(default = "HashMap::default")]
+    pub urls: HashMap<String, String>,
     #[serde(skip_serializing_if="Option::is_none")]
     #[serde(default = "Option::default")]
     pub quoted_tweet_id: Option<String>,
@@ -50,6 +55,10 @@ impl Tweet {
     }
     pub fn from_json(json: serde_json::Value) -> Result<Tweet, String> {
         if let serde_json::Value::Object(json_map) = json {
+            let mut url_map: HashMap<String, String> = HashMap::new();
+            for entry in json_map["entities"]["urls"].as_array().unwrap() {
+                url_map.insert(entry["url"].as_str().unwrap().to_owned(), entry["expanded_url"].as_str().unwrap().to_owned());
+            }
             let text = ::tw::full_twete_text(&json_map);
             let rt_twete = json_map.get("retweeted_status")
                 .and_then(|x| x.get("id_str"))
@@ -75,6 +84,7 @@ impl Tweet {
                         author_id: author_id.to_owned(),
                         text: text,
                         created_at: created_at.to_owned(),
+                        urls: url_map,
                         quoted_tweet_id: json_map.get("quoted_status_id_str")
                             .and_then(|x| x.as_str())
                             .map(|x| x.to_owned()),
