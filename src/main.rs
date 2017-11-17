@@ -323,6 +323,9 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
                 }
             }
         },
+        Event::Key(Key::End) => {
+            tweeter.display_info.infos_seek = 0;
+        }
         Event::Key(Key::PageUp) => {
             tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_add(1);
         }
