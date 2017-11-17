@@ -213,7 +213,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         lines.into_iter().rev().collect()
                     },
                     Infos::Event(e) => {
-                        let pre_split = e.clone().render(tweeter);
+                        let pre_split = e.clone().render(tweeter, width);
                         let total_length: usize = pre_split.iter().map(|x| x.len()).sum();
                         let wrapped = if total_length <= 1024 {
                             into_display_lines(pre_split, width)
@@ -282,11 +282,11 @@ fn color_for(handle: &String) -> termion::color::Fg<&color::Color> {
 }
 
 pub trait Render {
-    fn render(self, tweeter: &mut ::tw::TwitterCache) -> Vec<String>;
+    fn render(self, tweeter: &mut ::tw::TwitterCache, width: u16) -> Vec<String>;
 }
 
 impl Render for tw::events::Event {
-    fn render(self, tweeter: &mut ::tw::TwitterCache) -> Vec<String> {
+    fn render(self, tweeter: &mut ::tw::TwitterCache, width: u16) -> Vec<String> {
         let mut result = Vec::new();
         match self {
             tw::events::Event::Quoted { user_id, twete_id } => {
@@ -295,13 +295,13 @@ impl Render for tw::events::Event {
                     let user = tweeter.retrieve_user(&user_id).unwrap();
                     result.push(format!("  quoted_tweet    : {} (@{})", user.name, user.handle));
                 }
-                render_twete(&TweetId::Twitter(twete_id), tweeter, None);
+                render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width));
             }
             tw::events::Event::Deleted { user_id, twete_id } => {
                 if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle).map(|x| x.clone()) {
                     if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned())).map(|x| x.clone()) {
                         result.push(format!("-------------DELETED------------------"));
-                        result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
+                        result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width)));
                         result.push(format!("-------------DELETED------------------"));
                     } else {
                         result.push(format!("dunno what, but do know who: {} - {}", user_id, handle));
@@ -316,7 +316,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("  +rt_rt    : {} (@{})", user.name, user.handle));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width)));
             },
             tw::events::Event::Fav_RT { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -325,7 +325,7 @@ impl Render for tw::events::Event {
                 } else {
                     result.push(format!("  +rt_fav but don't know who {} is", user_id));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width)));
             },
             tw::events::Event::Fav { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -333,7 +333,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("{}  +fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset)));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width)));
             },
             tw::events::Event::Unfav { user_id, twete_id } => {
                 result.push("---------------------------------".to_string());
@@ -341,7 +341,7 @@ impl Render for tw::events::Event {
                 let user = tweeter.retrieve_user(&user_id).unwrap();
                 result.push(format!("{}  -fav      : {} (@{}){}", color::Fg(color::Yellow), user.name, user.handle, color::Fg(color::Reset)));
                 }
-                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, None));
+                result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, Some(width)));
             },
             tw::events::Event::Followed { user_id } => {
                 result.push("---------------------------------".to_string());

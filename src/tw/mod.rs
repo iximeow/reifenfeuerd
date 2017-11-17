@@ -286,6 +286,9 @@ impl TwitterCache {
                 key: "".to_owned(),
                 secret: "".to_owned()
             },
+            // So, supporting multiple profiles will be ... interesting?
+            // how do we support a variable number of channels? which will be necessary as we'll
+            // have one channel up per twitter stream...
             profile: None, // this will become a HashMap when multiple profiles are supported
             following: HashSet::new(),
             following_history: HashMap::new(),
@@ -345,7 +348,6 @@ impl TwitterCache {
 
     fn cache_tweet(&mut self, tweet: Tweet) {
         if !self.tweets.contains_key(&tweet.id) {
-
             let mut file =
                 OpenOptions::new()
                     .create(true)
@@ -706,12 +708,14 @@ fn handle_twitter_delete(
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
+    /*
     tweeter.display_info.recv(display::Infos::Event(
         events::Event::Deleted {
             user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
             twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
         }
     ));
+    */
 }
 
 fn handle_twitter_twete(
