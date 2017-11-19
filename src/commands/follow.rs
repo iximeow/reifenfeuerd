@@ -16,9 +16,9 @@ pub static UNFOLLOW: Command = Command {
 
 fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let screen_name = line.trim();
-    let result = match tweeter.profile.clone() {
-        Some(user_creds) => {
-            queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name), &tweeter.app_key, &user_creds)
+    let result = match tweeter.current_profile() {
+        Some(user_profile) => {
+            queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name), &tweeter.app_key, &user_profile.creds)
         },
         None => Err("No logged in user to unfollow from".to_owned())
     };
@@ -38,15 +38,15 @@ pub static FOLLOW: Command = Command {
 
 fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let screen_name = line.trim();
-    match tweeter.profile.clone() {
-        Some(user_creds) => {
+    match tweeter.current_profile().map(|profile| profile.to_owned()) {
+        Some(user_profile) => {
             tweeter.display_info.status(
                 format!(
                     "fl resp: {:?}",
                     queryer.do_api_post(
                         &format!("{}?screen_name={}", UNFOLLOW_URL, screen_name),
                         &tweeter.app_key,
-                        &user_creds
+                        &user_profile.creds
                     )
                 )
             )

@@ -119,10 +119,11 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
              */
             let (cursor_x, cursor_y) = match tweeter.display_info.mode.clone() {
                 None => {
+                    let handle = tweeter.current_profile().map(|profile| profile.user.handle.to_owned()).unwrap_or("_default_".to_owned());
                     print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
-                    print!("{}{}@{}>{}", cursor::Goto(1, height - 5), clear::CurrentLine, tweeter.current_user.handle, tweeter.display_info.input_buf.clone().into_iter().collect::<String>());
+                    print!("{}{}@{}>{}", cursor::Goto(1, height - 5), clear::CurrentLine, handle, tweeter.display_info.input_buf.clone().into_iter().collect::<String>());
                     print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
-                    ((1 + tweeter.current_user.handle.len() + 2 + tweeter.display_info.input_buf.len()) as u16, height as u16 - 5)
+                    ((1 + handle.len() + 2 + tweeter.display_info.input_buf.len()) as u16, height as u16 - 5)
                 }
                 Some(DisplayMode::Compose(x)) => {
                     let mut lines: Vec<String> = vec![];
@@ -143,7 +144,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         );
                         lines_drawn += 1;
                     }
-                    h += (lines_drawn - 3);
+                    h += lines_drawn - 3;
                     (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
@@ -166,7 +167,7 @@ pub fn paint(tweeter: &mut ::tw::TwitterCache) -> Result<(), std::io::Error> {
                         );
                         lines_drawn += 1;
                     }
-                    h += (lines_drawn - 3);
+                    h += lines_drawn - 3;
                     (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
             };

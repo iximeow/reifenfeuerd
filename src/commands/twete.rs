@@ -22,8 +22,8 @@ fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                let result = match tweeter.profile.clone() {
-                    Some(user_creds) => queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id), &tweeter.app_key, &user_creds),
+                let result = match tweeter.current_profile() {
+                    Some(user_profile) => queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to delete as".to_owned())
                 };
                 match result {
@@ -61,8 +61,8 @@ fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
 
 pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let substituted = ::url_encode(&text);
-    let result = match tweeter.profile.clone() {
-        Some(user_creds) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_creds),
+    let result = match tweeter.current_profile() {
+        Some(user_profile) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_profile.creds),
         None => Err("No logged in user to tweet as".to_owned())
     };
     match result {
@@ -83,6 +83,13 @@ pub static THREAD: Command = Command {
 // the difference between threading and replying is not including
 // yourself in th @'s.
 fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    let user_profile = match tweeter.current_profile().map(|profile| profile.to_owned()) {
+        Some(profile) => profile,
+        None => {
+            tweeter.display_info.status("To reply you must be authenticated as a user.".to_owned());
+            return;
+        }
+    };
     let mut text: String = line.trim().to_string();
     if let Some(id_end_idx) = text.find(" ") {
         let reply_bare = text.split_off(id_end_idx + 1);
@@ -95,8 +102,8 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                     if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                         let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                         // TODO: definitely breaks if you change your handle right now
-                        if handle == &tweeter.current_user.handle {
-                            send_reply(reply.to_owned(), twid, tweeter, queryer);
+                        if handle == &user_profile.user.handle {
+                            send_reply(reply.to_owned(), twid, tweeter, queryer, user_profile.creds);
                         } else {
                             tweeter.display_info.status("you can only thread your own tweets".to_owned());
                             // ask if it should .@ instead?
@@ -125,6 +132,13 @@ pub static REP: Command = Command {
 };
 
 fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+    let user_profile = match tweeter.current_profile().map(|profile| profile.to_owned()) {
+        Some(profile) => profile,
+        None => {
+            tweeter.display_info.status("To reply you must be authenticated as a user.".to_owned());
+            return;
+        }
+    };
     let mut text: String = line.trim().to_string();
     let reply_bare = match text.find(" ") {
         None => "".to_owned(),
@@ -152,8 +166,8 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 // if you're directly replying to yourself, i trust you know what you're doing and
                 // want to @ yourself again (this keeps self-replies from showing up on your
                 // profile as threaded tweets, f.ex)
-                if !(ats.len() > 0 && &ats[0] == &tweeter.current_user.handle) {
-                    ats.remove_item(&tweeter.current_user.handle);
+                if !(ats.len() > 0 && &ats[0] == &user_profile.user.handle) {
+                    ats.remove_item(&user_profile.user.handle);
                 }
                 //let ats_vec: Vec<&str> = ats.into_iter().collect();
                 //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
@@ -161,7 +175,7 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
 
                 if reply.len() > 0 {
-                    send_reply(full_reply, twid, tweeter, queryer);
+                    send_reply(full_reply, twid, tweeter, queryer, user_profile.creds);
                 } else {
                     tweeter.display_info.mode = Some(::display::DisplayMode::Reply(twid, full_reply));
                 }
@@ -175,11 +189,11 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     }
 }
 
-pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential) {
     if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
         let substituted = ::url_encode(&text);
-        let result = match tweeter.profile.clone() {
-            Some(user_creds) => {
+        let result = match tweeter.current_profile() {
+            Some(user_profile) => {
                 queryer.do_api_post(&format!("{}?status={}&in_reply_to_status_id={}", CREATE_TWEET_URL, substituted, twete.id), &tweeter.app_key, &user_creds)
             },
             None => Err("No logged in user to tweet as".to_owned())
@@ -220,8 +234,8 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                                 twete.id
                             )
                         );
-                        let result = match tweeter.profile.clone() {
-                            Some(user_creds) => {
+                        let result = match tweeter.current_profile() {
+                            Some(user_profile) => {
                                 queryer.do_api_post(
                                     &format!("{}?status={}&attachment_url={}",
                                              CREATE_TWEET_URL,
@@ -229,7 +243,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                                              attachment_url
                                     ),
                                     &tweeter.app_key,
-                                    &user_creds
+                                    &user_profile.creds
                                 )
                             },
                             None => Err("No logged in user to tweet as".to_owned())
@@ -267,9 +281,9 @@ fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) 
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
             if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
-                let result = match tweeter.profile.clone() {
-                    Some(user_creds) => {
-                        queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id), &tweeter.app_key, &user_creds)
+                let result = match tweeter.current_profile() {
+                    Some(user_profile) => {
+                        queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds)
                     },
                     None => Err("No logged in user to retweet as".to_owned())
                 };

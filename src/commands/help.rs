@@ -1,8 +1,6 @@
 use tw;
 use ::Queryer;
 
-use tw::TweetId;
-
 use commands::Command;
 
 pub static HELP: Command = Command {
