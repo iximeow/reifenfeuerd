@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use hyper;
 use ::Queryer;
 
-use tw::TweetId;
-
 use commands::Command;
 
 static FAV_TWEET_URL: &str = "https://api.twitter.com/1.1/favorites/create.json";
@@ -79,10 +77,11 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         as_map.insert(part[0], part[1]);
                     }
                     // turns out the "actual" oauth creds are different
-                    tweeter.add_profile(tw::Credential {
+                    // TODO: profile names?
+                    tweeter.add_profile(tw::TwitterProfile::new(tw::Credential {
                         key: as_map["oauth_token"].to_owned(),
                         secret: as_map["oauth_token_secret"].to_owned()
-                    });
+                    }, tw::user::User::default()), Some("iximeow".to_owned()));
                     tweeter.WIP_auth = None;
                     tweeter.state = tw::AppState::Reconnect;
                     tweeter.display_info.status("Looks like you authed! Connecting...".to_owned());

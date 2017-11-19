@@ -21,8 +21,8 @@ fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     match maybe_id {
         Ok(twid) => {
             if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
-                let result = match tweeter.profile.clone() {
-                    Some(user_creds) => queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id), &tweeter.app_key, &user_creds),
+                let result = match tweeter.current_profile() {
+                    Some(user_profile) => queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id), &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to unfav from".to_owned())
                 };
                 match result {
@@ -53,8 +53,8 @@ fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
         Ok(twid) => {
             // tweeter.to_twitter_tweet_id(twid)...
             if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
-                let result = match tweeter.profile.clone() {
-                    Some(user_creds) => queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id), &tweeter.app_key, &user_creds),
+                let result = match tweeter.current_profile() {
+                    Some(user_profile) => queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id), &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to fav from".to_owned())
                 };
                 match result {

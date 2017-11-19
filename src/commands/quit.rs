@@ -3,8 +3,6 @@ use ::Queryer;
 
 use commands::Command;
 
-use std::process::exit;
-
 pub static QUIT: Command = Command {
     keyword: "q",
     params: 0,

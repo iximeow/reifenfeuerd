@@ -12,6 +12,7 @@ pub static SHOW_CACHE: Command = Command {
 };
 
 fn show_cache(_line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Queryer) {
+    /*
     tweeter.display_info.status("----* USERS *----".to_owned());
     for (uid, user) in &tweeter.users {
         tweeter.display_info.status(format!("User: {} -> {:?}", uid, user));
@@ -30,4 +31,5 @@ fn show_cache(_line: String, tweeter: &mut tw::TwitterCache, mut queryer: &mut Q
             None => { tweeter.display_info.status("  ...".to_owned()); }
         }
     }
+    */
 }
