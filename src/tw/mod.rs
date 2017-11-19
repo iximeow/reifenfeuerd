@@ -23,10 +23,11 @@ use self::tweet::Tweet;
 pub mod user;
 use self::user::User;
 
+#[derive(Clone)]
 pub enum AppState {
     Shutdown,
     ShowHelp,
-    Reconnect,
+    Reconnect(String),
     Compose,
     View
 }

@@ -210,14 +210,12 @@ fn main() {
 
     tweeter.display_info.status("Cache loaded".to_owned());
 
-    let (tweet_tx, mut twete_rx) = chan::sync::<Vec<u8>>(0);
+    let (twete_tx, mut twete_rx) = chan::sync::<Vec<u8>>(0);
     let (coordination_tx, mut coordination_rx) = chan::sync::<TwitterConnectionState>(0);
 
-    tweeter.current_profile()
-        .map(|user_profile| user_profile.to_owned())
-        .map(|user_profile| {
-            connect_twitter_stream(tweeter.app_key.clone(), user_profile.creds, tweet_tx.clone(), coordination_tx.clone(), get_id());
-        });
+    for (ref profile_name, ref profile) in &tweeter.profiles {
+        connect_twitter_stream(tweeter.app_key.clone(), profile.creds.clone(), twete_tx.clone(), coordination_tx.clone(), get_id());
+    }
 
     std::thread::spawn(move || {
         for input in stdin().events() {
@@ -252,7 +250,7 @@ fn main() {
     };
 
     loop {
-        match do_ui(ui_rx, twete_rx, coordination_rx, &mut tweeter, &mut queryer) {
+        match do_ui(ui_rx, twete_rx, &twete_tx, coordination_rx, &coordination_tx, &mut tweeter, &mut queryer) {
             Some((new_ui_rx, new_twete_rx, new_coordination_rx)) => {
                 ui_rx = new_ui_rx;
                 twete_rx = new_twete_rx;
@@ -379,7 +377,9 @@ fn handle_twitter_line(line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut qu
 fn do_ui(
     ui_rx_orig: chan::Receiver<Result<termion::event::Event, std::io::Error>>,
     twete_rx: chan::Receiver<Vec<u8>>,
+    twete_tx: &chan::Sender<Vec<u8>>,
     coordination_rx: chan::Receiver<TwitterConnectionState>,
+    coordination_tx: &chan::Sender<TwitterConnectionState>,
     mut tweeter: &mut tw::TwitterCache,
     mut queryer: &mut ::Queryer
 ) -> Option<(chan::Receiver<Result<termion::event::Event, std::io::Error>>, chan::Receiver<Vec<u8>>, chan::Receiver<TwitterConnectionState>)> {
@@ -411,7 +411,7 @@ fn do_ui(
             Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
         };
 
-        match tweeter.state {
+        match tweeter.state.clone() {
             tw::AppState::ShowHelp => {
                 let mut help_lines: Vec<String> = vec![
                     "  Tweets",
@@ -439,10 +439,16 @@ fn do_ui(
                 display::paint(tweeter).unwrap();
                 tweeter.state = tw::AppState::View;
             }
-            tw::AppState::Reconnect => {
+            tw::AppState::Reconnect(profile_name) => {
                 tweeter.state = tw::AppState::View;
-                // TODO: reconnect *which*?
-                return None // Some((ui_rx_orig.clone(), tweeter.profile.clone().map(|creds| connect_twitter_stream(tweeter.app_key.clone(), creds))));
+                match tweeter.profiles.get(&profile_name).map(|profile| profile.creds.to_owned()) {
+                    Some(user_creds) => {
+                        connect_twitter_stream(tweeter.app_key.clone(), user_creds, twete_tx.clone(), coordination_tx.clone(), get_id())
+                    },
+                    None => {
+                        tweeter.display_info.status(format!("No profile named {}", profile_name));
+                    }
+                }
             },
             tw::AppState::Shutdown => {
                 tweeter.display_info.status("Saving cache...".to_owned());

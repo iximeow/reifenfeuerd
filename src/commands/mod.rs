@@ -19,8 +19,10 @@ pub mod quit;
 pub mod fav;
 pub mod follow;
 pub mod thread;
+pub mod profile;
 
 pub static COMMANDS: &[&Command] = &[
+    &profile::PROFILE,
     &help::HELP,
     &auth::AUTH,
     &auth::PIN,
