@@ -94,13 +94,23 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                     if tweeter.curr_profile.is_none() {
                         tweeter.curr_profile = Some("default".to_owned());
                     }
-                    tweeter.add_profile(tw::TwitterProfile::new(tw::Credential {
+                    let user_credential = tw::Credential {
                         key: as_map["oauth_token"].to_owned(),
                         secret: as_map["oauth_token_secret"].to_owned()
-                    }, tw::user::User::default()), Some("default".to_owned()));
-                    tweeter.WIP_auth = None;
-                    tweeter.state = tw::AppState::Reconnect;
-                    tweeter.display_info.status("Looks like you authed! Connecting...".to_owned());
+                    };
+
+                    match queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &tweeter.app_key, &user_credential) {
+                        Ok(settings) => {
+                            let user_handle = settings["screen_name"].as_str().unwrap().to_owned();
+                            tweeter.add_profile(tw::TwitterProfile::new(user_credential, tw::user::User::default()), Some(user_handle.clone()));
+                            tweeter.WIP_auth = None;
+                            tweeter.state = tw::AppState::Reconnect(user_handle);
+                            tweeter.display_info.status("Looks like you authed! Connecting...".to_owned());
+                        },
+                        Err(_) => {
+                            tweeter.display_info.status("Auth failed - couldn't find your handle.".to_owned());
+                        }
+                    };
                 },
                 Err(_) =>
                     tweeter.display_info.status("couldn't rebuild url".to_owned())
