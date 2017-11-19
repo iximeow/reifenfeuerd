@@ -521,10 +521,24 @@ impl TwitterCache {
                 let followed = json["target"]["id_str"].as_str().unwrap().to_string();
                 self.cache_api_user(json["target"].clone());
                 self.cache_api_user(json["source"].clone());
-                if follower == "iximeow" {
-                    // self.add_follow(
-                } else {
-                    self.add_follower(&follower);
+                match self.current_profile().map(|profile| profile.to_owned()) {
+                    Some(profile) => {
+                        // for now assume single client?
+                        // TODO: see note below - profile origin needs to be tracked.
+                        //
+                        if follower == profile.user.handle {
+                            // self.add_follow(
+                        } else {
+                            self.add_follower(&follower);
+                        }
+                    },
+                    None => {
+                        // TODO: this isn't really reachable - we'd have to be connected on some
+                        // ... this will break.
+                        //
+                        // events need to include what profile they're associated with so we can
+                        // note that for the tweet and event if applicable.
+                    }
                 }
             },
             Some("unfollow") => {
@@ -532,10 +546,24 @@ impl TwitterCache {
                 let followed = json["target"]["id_str"].as_str().unwrap().to_string();
                 self.cache_api_user(json["target"].clone());
                 self.cache_api_user(json["source"].clone());
-                if follower == "iximeow" {
-                    // self.add_follow(
-                } else {
-                    self.remove_follower(&follower);
+                match self.current_profile().map(|profile| profile.to_owned()) {
+                    Some(profile) => {
+                        // for now assume single client?
+                        // TODO: see note below - profile origin needs to be tracked.
+                        //
+                        if follower == profile.user.handle {
+                            // self.add_follow(
+                        } else {
+                            self.add_follower(&follower);
+                        }
+                    },
+                    None => {
+                        // TODO: this isn't really reachable - we'd have to be connected on some
+                        // ... this will break.
+                        //
+                        // events need to include what profile they're associated with so we can
+                        // note that for the tweet and event if applicable.
+                    }
                 }
             },
             Some(_) => () /* an uninteresting event */,
@@ -784,14 +812,20 @@ fn handle_twitter_welcome(
     let maybe_my_name = settings["screen_name"].as_str();
     if let Some(my_name) = maybe_my_name {
         // TODO: come back to this when custom profile names are supported?
-        tweeter.curr_profile = Some(my_name.to_owned());
+//        tweeter.curr_profile = Some(my_name.to_owned());
         tweeter.display_info.status(format!("You are {}", my_name))
     } else {
         tweeter.display_info.status("Unable to make API call to figure out who you are...".to_string());
     }
-    let followers = tweeter.get_followers(queryer).unwrap();
-    let id_arr: Vec<String> = followers["ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
-    tweeter.set_followers(id_arr);
+    match tweeter.get_followers(queryer) {
+        Ok(followers) => {
+            let id_arr: Vec<String> = followers["ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
+            tweeter.set_followers(id_arr);
+        },
+        Err(e) => {
+            tweeter.display_info.status(e);
+        }
+    }
 }
 
 pub fn handle_message(

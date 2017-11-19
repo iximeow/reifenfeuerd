@@ -78,10 +78,26 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                     }
                     // turns out the "actual" oauth creds are different
                     // TODO: profile names?
+                    /*
+                     * Option 1:
+                     *  ask user.
+                     *  yes, but I want this to be optional though (auth, pin 1234, profile now
+                     *  named main or after you or something)
+                     * Option 2:
+                     *  make a request for profile settings when auth succeeds
+                     *  this becomes the fallback when nothing is provided in option 1
+                     *  what happens when you successfully auth, internet drops, and you fail to
+                     *  request settings?
+                     *
+                     *  fallback to asking user to name the profile, i guess?
+                     */
+                    if tweeter.curr_profile.is_none() {
+                        tweeter.curr_profile = Some("default".to_owned());
+                    }
                     tweeter.add_profile(tw::TwitterProfile::new(tw::Credential {
                         key: as_map["oauth_token"].to_owned(),
                         secret: as_map["oauth_token_secret"].to_owned()
-                    }, tw::user::User::default()), Some("iximeow".to_owned()));
+                    }, tw::user::User::default()), Some("default".to_owned()));
                     tweeter.WIP_auth = None;
                     tweeter.state = tw::AppState::Reconnect;
                     tweeter.display_info.status("Looks like you authed! Connecting...".to_owned());
