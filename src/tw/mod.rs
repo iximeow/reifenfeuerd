@@ -111,7 +111,9 @@ pub struct TwitterCache {
     #[serde(skip)]
     pub display_info: display::DisplayInfo,
     #[serde(skip)]
-    pub state: AppState
+    pub state: AppState,
+    #[serde(skip)]
+    pub connection_map: HashMap<u8, String>
 }
 
 // Internally, a monotonically increasin i64 is always the id used.
@@ -289,6 +291,94 @@ impl TwitterProfile {
             follower_history: HashMap::new()
         }
     }
+    pub fn get_settings(&self, queryer: &mut ::Queryer, app_key: &Credential) -> Result<serde_json::Value, String> {
+        queryer.do_api_get(::ACCOUNT_SETTINGS_URL, app_key, &self.creds)
+    }
+    pub fn get_followers(&self, queryer: &mut ::Queryer, app_key: &Credential) -> Result<serde_json::Value, String> {
+        queryer.do_api_get(::GET_FOLLOWER_IDS_URL, app_key, &self.creds)
+    }
+    pub fn set_following(&mut self, user_ids: Vec<String>) -> (Vec<String>, Vec<String>) {
+        let uid_set = user_ids.into_iter().collect::<HashSet<String>>();
+        let mut new_following: Vec<String> = vec![];
+        let mut lost_following: Vec<String> = vec![];
+
+        let new_uids = &uid_set - &self.following;
+        for user in new_uids {
+            self.add_following(&user);
+            new_following.push(user);
+        }
+
+        let lost_uids = &self.following - &uid_set;
+        for user in lost_uids {
+            self.remove_following(&user);
+            lost_following.push(user);
+        }
+        (new_following, lost_following)
+    }
+    pub fn set_followers(&mut self, user_ids: Vec<String>) -> (Vec<String>, Vec<String>) {
+        let uid_set = user_ids.into_iter().collect::<HashSet<String>>();
+        let mut new_follower: Vec<String> = vec![];
+        let mut lost_follower: Vec<String> = vec![];
+
+        let new_uids = &uid_set - &self.followers;
+        for user in new_uids {
+            self.add_follower(&user);
+            new_follower.push(user);
+        }
+
+        let lost_uids = &self.followers - &uid_set;
+        for user in lost_uids {
+            self.remove_follower(&user);
+            lost_follower.push(user);
+        }
+        (new_follower, lost_follower)
+    }
+    /*
+     * Returns: "did this change?"
+     *
+     * but currently pessimistically always returns true right now
+     * TODO: check if this should return false! (that's probably a cache bug though.)
+     */
+    pub fn add_following(&mut self, user_id: &String) -> bool {
+        self.following.insert(user_id.to_owned());
+        self.following_history.insert(user_id.to_owned(), ("following".to_string(), Utc::now().timestamp()));
+        true
+    }
+    /*
+     * Returns: "did this change?"
+     *
+     * but currently pessimistically always returns true right now
+     * TODO: check if this should return false! (that's probably a cache bug though.)
+     */
+    pub fn remove_following(&mut self, user_id: &String) -> bool {
+        self.following.remove(user_id);
+        self.following_history.insert(user_id.to_owned(), ("unfollowing".to_string(), Utc::now().timestamp()));
+        true
+    }
+    /*
+     * Returns: "did this change?"
+     *
+     * but currently pessimistically always returns true right now
+     * TODO: check if this should return false! (that's probably a cache bug though.)
+     */
+    pub fn add_follower(&mut self, user_id: &String) -> bool {
+        self.followers.insert(user_id.to_owned());
+        self.lost_followers.remove(user_id);
+        self.follower_history.insert(user_id.to_owned(), ("follow".to_string(), Utc::now().timestamp()));
+        true
+    }
+    /*
+     * Returns: "did this change?"
+     *
+     * but currently pessimistically always returns true right now
+     * TODO: check if this should return false! (that's probably a cache bug though.)
+     */
+    pub fn remove_follower(&mut self, user_id: &String) -> bool {
+        self.followers.remove(user_id);
+        self.lost_followers.insert(user_id.to_owned());
+        self.follower_history.insert(user_id.to_owned(), ("unfollow".to_string(), Utc::now().timestamp()));
+        true
+    }
 }
 
 impl TwitterCache {
@@ -316,8 +406,13 @@ impl TwitterCache {
             threads: HashMap::new(),
             id_conversions: IdConversions::default(),
             display_info: display::DisplayInfo::default(),
-            state: AppState::View
+            state: AppState::View,
+            connection_map: HashMap::new()
         }
+    }
+
+    pub fn mut_profile_for_connection(&mut self, conn_id: u8) -> &mut TwitterProfile {
+        self.profiles.get_mut(&self.connection_map[&conn_id]).unwrap()
     }
 
     pub fn current_profile(&self) -> Option<&TwitterProfile> {
@@ -486,7 +581,7 @@ impl TwitterCache {
             self.cache_user(user);
         }
     }
-    pub fn cache_api_event(&mut self, json: serde_json::Map<String, serde_json::Value>, mut queryer: &mut ::Queryer) {
+    pub fn cache_api_event(&mut self, conn_id: u8, json: serde_json::Map<String, serde_json::Value>, mut queryer: &mut ::Queryer) {
         /* don't really care to hold on to who fav, unfav, ... when, just pick targets out. */
         match json.get("event").and_then(|x| x.as_str()) {
             Some("quoted_tweet") => {
@@ -522,24 +617,11 @@ impl TwitterCache {
                 let followed = json["target"]["id_str"].as_str().unwrap().to_string();
                 self.cache_api_user(json["target"].clone());
                 self.cache_api_user(json["source"].clone());
-                match self.current_profile().map(|profile| profile.to_owned()) {
-                    Some(profile) => {
-                        // for now assume single client?
-                        // TODO: see note below - profile origin needs to be tracked.
-                        //
-                        if follower == profile.user.handle {
-                            // self.add_follow(
-                        } else {
-                            self.add_follower(&follower);
-                        }
-                    },
-                    None => {
-                        // TODO: this isn't really reachable - we'd have to be connected on some
-                        // ... this will break.
-                        //
-                        // events need to include what profile they're associated with so we can
-                        // note that for the tweet and event if applicable.
-                    }
+                let profile = self.mut_profile_for_connection(conn_id);
+                if follower == profile.user.handle {
+                    // self.add_follow(
+                } else {
+                    profile.add_follower(&follower);
                 }
             },
             Some("unfollow") => {
@@ -547,24 +629,11 @@ impl TwitterCache {
                 let followed = json["target"]["id_str"].as_str().unwrap().to_string();
                 self.cache_api_user(json["target"].clone());
                 self.cache_api_user(json["source"].clone());
-                match self.current_profile().map(|profile| profile.to_owned()) {
-                    Some(profile) => {
-                        // for now assume single client?
-                        // TODO: see note below - profile origin needs to be tracked.
-                        //
-                        if follower == profile.user.handle {
-                            // self.add_follow(
-                        } else {
-                            self.add_follower(&follower);
-                        }
-                    },
-                    None => {
-                        // TODO: this isn't really reachable - we'd have to be connected on some
-                        // ... this will break.
-                        //
-                        // events need to include what profile they're associated with so we can
-                        // note that for the tweet and event if applicable.
-                    }
+                let profile = self.mut_profile_for_connection(conn_id);
+                if follower == profile.user.handle {
+                    // self.add_follow(
+                } else {
+                    profile.add_follower(&follower);
                 }
             },
             Some(_) => () /* an uninteresting event */,
@@ -631,70 +700,6 @@ impl TwitterCache {
         }
         self.users.get(user_id)
     }
-    pub fn set_following(&mut self, user_ids: Vec<String>) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            let uid_set = user_ids.into_iter().collect::<HashSet<String>>();
-
-            let new_uids = &uid_set - &profile.following;
-            for user in &new_uids {
-                self.display_info.status(format!("New following! {}", user));
-                self.add_following(user);
-            }
-
-            let lost_uids = &profile.following - &uid_set;
-            for user in &lost_uids {
-                self.display_info.status(format!("Bye, friend! {}", user));
-                self.remove_following(user);
-            }
-        });
-    }
-    pub fn set_followers(&mut self, user_ids: Vec<String>) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            let uid_set = user_ids.into_iter().collect::<HashSet<String>>();
-
-            let new_uids = &uid_set - &profile.followers;
-            for user in &new_uids {
-                self.display_info.status(format!("New follower! {}", user));
-                self.add_follower(user);
-            }
-
-            let lost_uids = &profile.followers - &uid_set;
-            for user in &lost_uids {
-                self.display_info.status(format!("Bye, friend! {}", user));
-                self.remove_follower(user);
-            }
-        });
-    }
-    pub fn add_following(&mut self, user_id: &String) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            self.needs_save = true;
-            profile.following.insert(user_id.to_owned());
-            profile.following_history.insert(user_id.to_owned(), ("following".to_string(), Utc::now().timestamp()));
-        });
-    }
-    pub fn remove_following(&mut self, user_id: &String) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            self.needs_save = true;
-            profile.following.remove(user_id);
-            profile.following_history.insert(user_id.to_owned(), ("unfollowing".to_string(), Utc::now().timestamp()));
-        });
-    }
-    pub fn add_follower(&mut self, user_id: &String) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            self.needs_save = true;
-            profile.followers.insert(user_id.to_owned());
-            profile.lost_followers.remove(user_id);
-            profile.follower_history.insert(user_id.to_owned(), ("follow".to_string(), Utc::now().timestamp()));
-        });
-    }
-    pub fn remove_follower(&mut self, user_id: &String) {
-        self.current_profile().map(|profile| profile.to_owned()).map(|mut profile| {
-            self.needs_save = true;
-            profile.followers.remove(user_id);
-            profile.lost_followers.insert(user_id.to_owned());
-            profile.follower_history.insert(user_id.to_owned(), ("unfollow".to_string(), Utc::now().timestamp()));
-        });
-    }
 
     fn look_up_user(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
         let url = &format!("{}?user_id={}", ::USER_LOOKUP_URL, id);
@@ -709,20 +714,6 @@ impl TwitterCache {
         match self.current_profile() {
             Some(ref user_profile) => queryer.do_api_get(url, &self.app_key, &user_profile.creds),
             None => Err("No authorized user to conduct lookup".to_owned())
-        }
-    }
-
-    pub fn get_settings(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        match self.current_profile() {
-            Some(ref user_profile) => queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &self.app_key, &user_profile.creds),
-            None => Err("No authorized user to request settings".to_owned())
-        }
-    }
-
-    pub fn get_followers(&self, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        match self.current_profile() {
-            Some(ref user_profile) => queryer.do_api_get(::GET_FOLLOWER_IDS_URL, &self.app_key, &user_profile.creds),
-            None => Err("No authorized user to request followers".to_owned())
         }
     }
 
@@ -756,10 +747,11 @@ impl TwitterCache {
 }
 
 fn handle_twitter_event(
+    conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     mut queryer: &mut ::Queryer) {
-    tweeter.cache_api_event(structure.clone(), &mut queryer);
+    tweeter.cache_api_event(conn_id, structure.clone(), &mut queryer);
     match events::Event::from_json(structure) {
         Ok(event) => {
             tweeter.display_info.recv(display::Infos::Event(event));
@@ -771,6 +763,7 @@ fn handle_twitter_event(
 }
 
 fn handle_twitter_delete(
+    conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
@@ -785,6 +778,7 @@ fn handle_twitter_delete(
 }
 
 fn handle_twitter_twete(
+    conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
@@ -795,6 +789,7 @@ fn handle_twitter_twete(
 }
 
 fn handle_twitter_dm(
+    conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     _queryer: &mut ::Queryer) {
@@ -803,25 +798,42 @@ fn handle_twitter_dm(
 }
 
 fn handle_twitter_welcome(
+    conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
     queryer: &mut ::Queryer) {
-    let user_id_nums = structure["friends"].as_array().unwrap();
-    let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
-    tweeter.set_following(user_id_strs.collect());
-    let settings = tweeter.get_settings(queryer).unwrap();
-    let maybe_my_name = settings["screen_name"].as_str();
-    if let Some(my_name) = maybe_my_name {
-        // TODO: come back to this when custom profile names are supported?
-//        tweeter.curr_profile = Some(my_name.to_owned());
-        tweeter.display_info.status(format!("You are {}", my_name))
-    } else {
-        tweeter.display_info.status("Unable to make API call to figure out who you are...".to_string());
-    }
-    match tweeter.get_followers(queryer) {
-        Ok(followers) => {
+    let app_key = tweeter.app_key.clone();
+    let followers_changes = {
+        let mut profile = tweeter.mut_profile_for_connection(conn_id);
+
+        let settings = profile.get_settings(queryer, &app_key).unwrap();
+
+        let user_id_nums = structure["friends"].as_array().unwrap();
+        let user_id_strs = user_id_nums.into_iter().map(|x| x.as_u64().unwrap().to_string());
+        let (new_following, lost_following) = profile.set_following(user_id_strs.collect());
+
+        let maybe_my_name = settings["screen_name"].as_str();
+
+        profile.get_followers(queryer, &app_key).map(|followers| {
             let id_arr: Vec<String> = followers["ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
-            tweeter.set_followers(id_arr);
+            (maybe_my_name.unwrap().to_owned(), new_following, lost_following, profile.set_followers(id_arr))
+        })
+    };
+
+    match followers_changes {
+        Ok((my_name, new_following, lost_following, (new_followers, lost_followers))) => {
+            for user in new_following {
+                tweeter.display_info.status(format!("New following! {}", user));
+            }
+            for user in lost_following {
+                tweeter.display_info.status(format!("Not following {} anymore", user));
+            }
+            for user in new_followers {
+                tweeter.display_info.status(format!("New follower! {}", user));
+            }
+            for user in lost_followers {
+                tweeter.display_info.status(format!("{} isn't following anymore", user));
+            }
         },
         Err(e) => {
             tweeter.display_info.status(e);
@@ -830,6 +842,7 @@ fn handle_twitter_welcome(
 }
 
 pub fn handle_message(
+    conn_id: u8,
     twete: serde_json::Value,
     tweeter: &mut TwitterCache,
     queryer: &mut ::Queryer
@@ -837,15 +850,15 @@ pub fn handle_message(
     match twete {
         serde_json::Value::Object(objmap) => {
             if objmap.contains_key("event") {
-                handle_twitter_event(objmap, tweeter, queryer);
+                handle_twitter_event(conn_id, objmap, tweeter, queryer);
             } else if objmap.contains_key("friends") {
-                handle_twitter_welcome(objmap, tweeter, queryer);
+                handle_twitter_welcome(conn_id, objmap, tweeter, queryer);
             } else if objmap.contains_key("delete") {
-                handle_twitter_delete(objmap, tweeter, queryer);
+                handle_twitter_delete(conn_id, objmap, tweeter, queryer);
             } else if objmap.contains_key("user") && objmap.contains_key("id") {
-                handle_twitter_twete(objmap, tweeter, queryer);
+                handle_twitter_twete(conn_id, objmap, tweeter, queryer);
             } else if objmap.contains_key("direct_message") {
-                handle_twitter_dm(objmap, tweeter, queryer);
+                handle_twitter_dm(conn_id, objmap, tweeter, queryer);
             } else {
                 tweeter.display_info.status(format!("Unknown json: {:?}", objmap));
             }
