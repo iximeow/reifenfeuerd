@@ -23,6 +23,7 @@ pub mod profile;
 
 pub static COMMANDS: &[&Command] = &[
     &profile::PROFILE,
+    &profile::PROFILES,
     &help::HELP,
     &auth::AUTH,
     &auth::PIN,

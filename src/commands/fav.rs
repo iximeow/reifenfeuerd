@@ -43,7 +43,7 @@ pub static FAV: Command = Command {
     keyword: "fav",
     params: 1,
     exec: fav,
-    param_str: "<tweet_id>",
+    param_str: " <tweet_id>",
     help_str: "Favorite a tweet."
 };
 
