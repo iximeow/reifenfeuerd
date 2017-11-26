@@ -1,10 +1,11 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
 pub struct Command {
     pub keyword: &'static str,
     pub params: u8,
-    pub exec: fn(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer),
+    pub exec: fn(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo),
     pub param_str: &'static str,
     pub help_str: &'static str
 }

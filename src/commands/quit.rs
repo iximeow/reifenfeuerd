@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
@@ -12,6 +13,6 @@ pub static QUIT: Command = Command {
     help_str: "Gracefully exit this thing"
 };
 
-fn quit(_line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
+fn quit(_line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     tweeter.state = tw::AppState::Shutdown;
 }

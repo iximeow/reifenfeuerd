@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
@@ -15,20 +16,20 @@ pub static VIEW: Command = Command {
     help_str: "Display tweet <tweet_id> with a reference URL"
 };
 
-fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
+fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     match TweetId::parse(line) {
         Ok(twid) => {
-            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) {
-                tweeter.display_info.recv(display::Infos::TweetWithContext(
+            if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info) {
+                display_info.recv(display::Infos::TweetWithContext(
                     TweetId::Twitter(twete.id.to_owned()),
                     format!("link: https://twitter.com/i/web/status/{}", twete.id)
                 ));
             } else {
-                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+                display_info.status(format!("No tweet for id {:?}", twid));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Invalid id {:?}", e));
+            display_info.status(format!("Invalid id {:?}", e));
         }
     }
 }
@@ -41,28 +42,28 @@ pub static VIEW_THREAD: Command = Command {
     help_str: "Display whole thread leading to <tweet_id>, reference URLs for each"
 };
 
-fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn view_tr(line: String, mut tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let mut thread: Vec<TweetId> = Vec::new();
     let maybe_curr_id = TweetId::parse(line);
     match maybe_curr_id {
         Ok(curr_id) => {
-            let first_twete = tweeter.fetch_tweet(&curr_id, queryer).map(|x| x.to_owned());
+            let first_twete = tweeter.fetch_tweet(&curr_id, queryer, display_info).map(|x| x.to_owned());
             if first_twete.is_some() {
                 thread.push(curr_id);
             }
             let mut maybe_next_id = first_twete.and_then(|x| x.reply_to_tweet.to_owned());
             while let Some(next_id) = maybe_next_id {
                 let curr_id = TweetId::Twitter(next_id);
-                maybe_next_id = tweeter.fetch_tweet(&curr_id, queryer).and_then(|x| x.reply_to_tweet.to_owned());
+                maybe_next_id = tweeter.fetch_tweet(&curr_id, queryer, display_info).and_then(|x| x.reply_to_tweet.to_owned());
                 thread.push(curr_id);
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Invalid id {:?}", e));
+            display_info.status(format!("Invalid id {:?}", e));
         }
     }
 
-    tweeter.display_info.recv(display::Infos::Thread(thread));
+    display_info.recv(display::Infos::Thread(thread));
 }
 
 pub static VIEW_THREAD_FORWARD: Command = Command {
@@ -73,7 +74,7 @@ pub static VIEW_THREAD_FORWARD: Command = Command {
     help_str: "help me make this work"
 };
 
-fn view_tr_forward(_line: String, _tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
+fn view_tr_forward(_line: String, _tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     // first see if we have a thread for the tweet named
     // if we do not, we'll have to mimic a request like 
     // curl 'https://twitter.com/jojonila/status/914383908090691584' \

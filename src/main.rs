@@ -206,9 +206,11 @@ fn main() {
     // even though it's not ever present before here
     println!("Loading cache...");
 
-    let mut tweeter = tw::TwitterCache::load_cache();
+    let mut display_info = display::DisplayInfo::default();
 
-    tweeter.display_info.status("Cache loaded".to_owned());
+    let mut tweeter = tw::TwitterCache::load_cache(&mut display_info);
+
+    display_info.status("Cache loaded".to_owned());
 
     let (twete_tx, twete_rx) = chan::sync::<(u8, Vec<u8>)>(0);
     let (coordination_tx, coordination_rx) = chan::sync::<(u8, TwitterConnectionState)>(0);
@@ -244,73 +246,73 @@ fn main() {
 
     tcsetattr(0, TCSANOW, &new_termios).unwrap();
 
-    match display::paint(&mut tweeter) {
+    match display::paint(&mut tweeter, &mut display_info) {
         Ok(_) => (),
         Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
     };
 
-    do_ui(ui_rx, twete_rx, &twete_tx, coordination_rx, &coordination_tx, &mut tweeter, &mut queryer);
+    do_ui(ui_rx, twete_rx, &twete_tx, coordination_rx, &coordination_tx, &mut tweeter, &mut display_info, &mut queryer);
 
     tcsetattr(0, TCSANOW, &termios);
 }
 
-fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, queryer: &mut ::Queryer) {
+fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, queryer: &mut ::Queryer, display_info: &mut display::DisplayInfo) {
     match event {
         Event::Key(Key::Backspace) => {
-            match tweeter.display_info.mode.clone() {
-                None => { tweeter.display_info.input_buf.pop(); },
+            match display_info.mode.clone() {
+                None => { display_info.input_buf.pop(); },
                 Some(display::DisplayMode::Compose(msg)) => {
                     let mut newstr = msg.clone();
                     newstr.pop();
-                    tweeter.display_info.mode = Some(display::DisplayMode::Compose(newstr));
+                    display_info.mode = Some(display::DisplayMode::Compose(newstr));
                 },
                 Some(display::DisplayMode::Reply(twid, msg)) => {
                     let mut newstr = msg.clone();
                     newstr.pop();
-                    tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, newstr));
+                    display_info.mode = Some(display::DisplayMode::Reply(twid, newstr));
                 }
             }
         }
         // would Shift('\n') but.. that doesn't exist.
         // would Ctrl('\n') but.. that doesn't work.
         Event::Key(Key::Ctrl('u')) => {
-             match tweeter.display_info.mode.clone() {
-                None => tweeter.display_info.input_buf = vec![],
+             match display_info.mode.clone() {
+                None => display_info.input_buf = vec![],
                 Some(display::DisplayMode::Compose(msg)) => {
                     // TODO: clear only one line?
-                    tweeter.display_info.mode = Some(display::DisplayMode::Compose("".to_owned()));
+                    display_info.mode = Some(display::DisplayMode::Compose("".to_owned()));
                 }
                 Some(display::DisplayMode::Reply(twid, msg)) => {
-                    tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, "".to_owned()));
+                    display_info.mode = Some(display::DisplayMode::Reply(twid, "".to_owned()));
                 }
             }
         }
         Event::Key(Key::Ctrl('n')) => {
-            match tweeter.display_info.mode.clone() {
+            match display_info.mode.clone() {
                 Some(display::DisplayMode::Compose(msg)) => {
-                    tweeter.display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, "\n")));
+                    display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, "\n")));
                 }
                 _ => {}
             }
         }
         // TODO: ctrl+u, ctrl+w
         Event::Key(Key::Char(x)) => {
-            match tweeter.display_info.mode.clone() {
+            match display_info.mode.clone() {
                 None => {
                     if x == '\n' {
-                        let line = tweeter.display_info.input_buf.drain(..).collect::<String>();
-                        tweeter.handle_user_input(line.into_bytes(), queryer);
+                        let line = display_info.input_buf.drain(..).collect::<String>();
+                        tweeter.handle_user_input(line.into_bytes(), queryer, display_info);
                     } else {
-                        tweeter.display_info.input_buf.push(x);
+                        display_info.input_buf.push(x);
                     }
                 }
                 Some(display::DisplayMode::Compose(msg)) => {
                     if x == '\n' {
                         // TODO: move this somewhere better.
-                        ::commands::twete::send_twete(msg, tweeter, queryer);
-                        tweeter.display_info.mode = None;
+                        ::commands::twete::send_twete(msg, tweeter, queryer, display_info);
+                        display_info.mode = None;
                     } else {
-                        tweeter.display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, x)));
+                        display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, x)));
                     }
                 }
                 Some(display::DisplayMode::Reply(twid, msg)) => {
@@ -318,30 +320,30 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
                         match tweeter.current_profile().map(|profile| profile.to_owned()) {
                             Some(profile) => {
                                 // TODO: move this somewhere better.
-                                ::commands::twete::send_reply(msg, twid, tweeter, queryer, profile.creds);
+                                ::commands::twete::send_reply(msg, twid, tweeter, queryer, profile.creds, display_info);
                             },
                             None => {
-                                tweeter.display_info.status("Cannot reply when not logged in".to_owned());
+                                display_info.status("Cannot reply when not logged in".to_owned());
                             }
                         }
-                        tweeter.display_info.mode = None;
+                        display_info.mode = None;
                     } else {
-                        tweeter.display_info.mode = Some(display::DisplayMode::Reply(twid, format!("{}{}", msg, x)));
+                        display_info.mode = Some(display::DisplayMode::Reply(twid, format!("{}{}", msg, x)));
                     }
                 }
             }
         },
         Event::Key(Key::End) => {
-            tweeter.display_info.infos_seek = 0;
+            display_info.infos_seek = 0;
         }
         Event::Key(Key::PageUp) => {
-            tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_add(1);
+            display_info.infos_seek = display_info.infos_seek.saturating_add(1);
         }
         Event::Key(Key::PageDown) => {
-            tweeter.display_info.infos_seek = tweeter.display_info.infos_seek.saturating_sub(1);
+            display_info.infos_seek = display_info.infos_seek.saturating_sub(1);
         }
         Event::Key(Key::Esc) => {
-            tweeter.display_info.mode = None;
+            display_info.mode = None;
         }
         Event::Key(_) => { }
         Event::Mouse(_) => { }
@@ -349,18 +351,18 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
     }
 }
 
-fn handle_twitter_line(conn_id: u8, line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer) {
+fn handle_twitter_line(conn_id: u8, line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer, display_info: &mut display::DisplayInfo) {
     let jsonstr = std::str::from_utf8(&line).unwrap().trim();
     /* TODO: replace from_str with from_slice? */
     match serde_json::from_str(&jsonstr) {
         Ok(json) => {
-            tw::handle_message(conn_id, json, &mut tweeter, &mut queryer);
+            tw::handle_message(conn_id, json, &mut tweeter, display_info, &mut queryer);
             if tweeter.needs_save && tweeter.caching_permitted {
-                tweeter.store_cache();
+                tweeter.store_cache(display_info);
             }
         },
         Err(e) =>
-            tweeter.display_info.status(format!("Error reading twitter line: {}", jsonstr))
+            display_info.status(format!("Error reading twitter line: {}", jsonstr))
     }
 }
 
@@ -371,6 +373,7 @@ fn do_ui(
     coordination_rx: chan::Receiver<(u8, TwitterConnectionState)>,
     coordination_tx: &chan::Sender<(u8, TwitterConnectionState)>,
     mut tweeter: &mut tw::TwitterCache,
+    mut display_info: &mut display::DisplayInfo,
     mut queryer: &mut ::Queryer
 ) {
     loop {
@@ -383,7 +386,7 @@ fn do_ui(
                                 tweeter.connection_map.insert(conn_id, profile_name);
                             },
                             TwitterConnectionState::Connected => {
-                                tweeter.display_info.status(format!("Stream connected for profile \"{}\"", tweeter.connection_map[&conn_id]));
+                                display_info.status(format!("Stream connected for profile \"{}\"", tweeter.connection_map[&conn_id]));
                             },
                             TwitterConnectionState::Closed => {
                                 tweeter.connection_map.remove(&conn_id);
@@ -394,22 +397,22 @@ fn do_ui(
                 }
             },
             twete_rx.recv() -> twete => match twete {
-                Some((conn_id, line)) => handle_twitter_line(conn_id, line, tweeter, queryer),
+                Some((conn_id, line)) => handle_twitter_line(conn_id, line, tweeter, queryer, display_info),
                 None => {
-                    tweeter.display_info.status("Twitter stream hung up...".to_owned());
-                    display::paint(tweeter).unwrap();
+                    display_info.status("Twitter stream hung up...".to_owned());
+                    display::paint(tweeter, display_info).unwrap();
                     return; // if the twitter channel died, something real bad happeneed?
                 }
             },
             ui_rx.recv() -> user_input => match user_input {
-                Some(Ok(event)) => handle_input(event, tweeter, queryer),
+                Some(Ok(event)) => handle_input(event, tweeter, queryer, display_info),
                 Some(Err(_)) => (), /* stdin closed? */
                 None => return // UI ded
             }
         }
 
         // one day display_info should be distinct
-        match display::paint(tweeter) {
+        match display::paint(tweeter, display_info) {
             Ok(_) => (),
             Err(e) => println!("{}", e)  // TODO: we got here because writing to stdout failed. what to do now?
         };
@@ -438,8 +441,8 @@ fn do_ui(
                 for command in commands::COMMANDS {
                     help_lines.push(format!("{}{: <width$} {}", command.keyword, command.param_str, command.help_str, width=(35 - command.keyword.len())));
                 }
-                tweeter.display_info.infos.push(display::Infos::Text(help_lines));
-                display::paint(tweeter).unwrap();
+                display_info.infos.push(display::Infos::Text(help_lines));
+                display::paint(tweeter, display_info).unwrap();
                 tweeter.state = tw::AppState::View;
             }
             tw::AppState::Reconnect(profile_name) => {
@@ -449,16 +452,16 @@ fn do_ui(
                         connect_twitter_stream(tweeter.app_key.clone(), profile_name, user_creds, twete_tx.clone(), coordination_tx.clone(), get_id())
                     },
                     None => {
-                        tweeter.display_info.status(format!("No profile named {}", profile_name));
+                        display_info.status(format!("No profile named {}", profile_name));
                     }
                 }
             },
             tw::AppState::Shutdown => {
-                tweeter.display_info.status("Saving cache...".to_owned());
-                display::paint(tweeter).unwrap();
-                tweeter.store_cache();
-                tweeter.display_info.status("Bye bye!".to_owned());
-                display::paint(tweeter).unwrap();
+                display_info.status("Saving cache...".to_owned());
+                display::paint(tweeter, display_info).unwrap();
+                tweeter.store_cache(display_info);
+                display_info.status("Bye bye!".to_owned());
+                display::paint(tweeter, display_info).unwrap();
                 return;
             },
             tw::AppState::View | tw::AppState::Compose => { /* nothing special to do */ }
