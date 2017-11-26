@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 use ::display;
@@ -14,9 +15,9 @@ pub static FORGET_THREAD: Command = Command {
     help_str: "Discard thread known by <name>. Entirely local to the client."
 };
 
-fn forget(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
+fn forget(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     tweeter.forget_thread(line.trim().to_string());
-    tweeter.display_info.status(format!("Ok! Forgot thread {}", line.trim().to_string()));
+    display_info.status(format!("Ok! Forgot thread {}", line.trim().to_string()));
 }
 
 pub static REMEMBER_THREAD: Command = Command {
@@ -27,7 +28,7 @@ pub static REMEMBER_THREAD: Command = Command {
     help_str: "Remember the thread tipped by <tweet_id> as  <name>. Entirely local to the client."
 };
 
-fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer) {
+fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let mut text: String = line.trim().to_string();
     if let Some(id_end_idx) = text.find(" ") {
         let name_bare = text.split_off(id_end_idx + 1);
@@ -37,15 +38,15 @@ fn remember(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer
             let maybe_id = TweetId::parse(line.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) {
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) {
                         tweeter.set_thread(name.to_string(), twete.internal_id);
-                        tweeter.display_info.status(format!("Ok! Recorded {:?} as thread {}", twid, name));
+                        display_info.status(format!("Ok! Recorded {:?} as thread {}", twid, name));
                     } else {
-                        tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
+                        display_info.status(format!("No tweet for id: {:?}", twid));
                     }
                 }
                 Err(e) => {
-                    tweeter.display_info.status(format!("Invalid id: {}", e));
+                    display_info.status(format!("Invalid id: {}", e));
                 }
             }
         }
@@ -60,10 +61,10 @@ pub static LIST_THREADS: Command = Command {
     help_str: "Show all known (local) threads"
 };
 
-fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn ls_threads(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let threads: Vec<String> = tweeter.threads().collect::<Vec<&String>>().into_iter().map(|x| x.to_owned()).collect::<Vec<String>>();
     for k in threads {
         let latest_inner_id = tweeter.latest_in_thread(k.to_owned()).unwrap().to_owned();
-        tweeter.display_info.recv(display::Infos::TweetWithContext(TweetId::Bare(latest_inner_id), format!("Thread: {}", k)))
+        display_info.recv(display::Infos::TweetWithContext(TweetId::Bare(latest_inner_id), format!("Thread: {}", k)))
     }
 }

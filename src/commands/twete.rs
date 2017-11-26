@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
@@ -17,25 +18,25 @@ pub static DEL: Command = Command {
     help_str: "Delete tweet <tweet_id>"
 };
 
-fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     match TweetId::parse(line.clone()) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
-            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.id.to_owned()) {
                 let result = match tweeter.current_profile() {
                     Some(user_profile) => queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to delete as".to_owned())
                 };
                 match result {
                     Ok(_) => (),
-                    Err(e) => tweeter.display_info.status(e)
+                    Err(e) => display_info.status(e)
                 }
             } else {
-                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+                display_info.status(format!("No tweet for id {:?}", twid));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Invalid id: {:?} ({})", line, e));
+            display_info.status(format!("Invalid id: {:?} ({})", line, e));
         }
     }
 }
@@ -48,18 +49,18 @@ pub static TWETE: Command = Command {
     help_str: "Enter tweet compose mode."
 };
 
-fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     // if there's text, send it.
     // if it's just "t", enter compose mode.
     let text = line.trim().to_owned();
     if text.len() == 0 {
-        tweeter.display_info.mode = Some(::display::DisplayMode::Compose(text));
+        display_info.mode = Some(::display::DisplayMode::Compose(text));
     } else {
-        send_twete(text, tweeter, queryer);
+        send_twete(text, tweeter, queryer, display_info);
     }
 }
 
-pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let substituted = ::url_encode(&text);
     let result = match tweeter.current_profile() {
         Some(user_profile) => queryer.do_api_post(&format!("{}?status={}", CREATE_TWEET_URL, substituted), &tweeter.app_key, &user_profile.creds),
@@ -67,7 +68,7 @@ pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Qu
     };
     match result {
         Ok(_) => (),
-        Err(e) => tweeter.display_info.status(e)
+        Err(e) => display_info.status(e)
     }
 }
 
@@ -82,11 +83,11 @@ pub static THREAD: Command = Command {
 
 // the difference between threading and replying is not including
 // yourself in th @'s.
-fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let user_profile = match tweeter.current_profile().map(|profile| profile.to_owned()) {
         Some(profile) => profile,
         None => {
-            tweeter.display_info.status("To reply you must be authenticated as a user.".to_owned());
+            display_info.status("To reply you must be authenticated as a user.".to_owned());
             return;
         }
     };
@@ -99,26 +100,26 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
             let maybe_id = TweetId::parse(id_str.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                         let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                         // TODO: definitely breaks if you change your handle right now
                         if handle == &user_profile.user.handle {
-                            send_reply(reply.to_owned(), twid, tweeter, queryer, user_profile.creds);
+                            send_reply(reply.to_owned(), twid, tweeter, queryer, user_profile.creds, display_info);
                         } else {
-                            tweeter.display_info.status("you can only thread your own tweets".to_owned());
+                            display_info.status("you can only thread your own tweets".to_owned());
                             // ask if it should .@ instead?
                         }
                     }
                 }
                 Err(e) => {
-                    tweeter.display_info.status(format!("Invalid id: {}", e));
+                    display_info.status(format!("Invalid id: {}", e));
                 }
             }
         } else {
-            tweeter.display_info.status("thread <id> your sik reply".to_owned());
+            display_info.status("thread <id> your sik reply".to_owned());
         }
     } else {
-        tweeter.display_info.status("thread <id> your sik reply".to_owned());
+        display_info.status("thread <id> your sik reply".to_owned());
     }
 }
 
@@ -131,11 +132,11 @@ pub static REP: Command = Command {
     help_str: "Enter compose mode to reply to <tweet_id>"
 };
 
-fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let user_profile = match tweeter.current_profile().map(|profile| profile.to_owned()) {
         Some(profile) => profile,
         None => {
-            tweeter.display_info.status("To reply you must be authenticated as a user.".to_owned());
+            display_info.status("To reply you must be authenticated as a user.".to_owned());
             return;
         }
     };
@@ -151,13 +152,13 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     let maybe_id = TweetId::parse(id_str.to_owned());
     match maybe_id {
         Ok(twid) => {
-            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+            if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                 // get handles to reply to...
                 let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                 let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
                 ats.remove_item(&author_handle);
                 ats.insert(0, author_handle);
-                if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
+                if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id), display_info)).map(|x| x.clone()) {
                     let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
                     ats.remove_item(&rt_author_handle);
                     ats.insert(1, rt_author_handle);
@@ -175,22 +176,22 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
 
                 if reply.len() > 0 {
-                    send_reply(full_reply, twid, tweeter, queryer, user_profile.creds);
+                    send_reply(full_reply, twid, tweeter, queryer, user_profile.creds, display_info);
                 } else {
-                    tweeter.display_info.mode = Some(::display::DisplayMode::Reply(twid, full_reply));
+                    display_info.mode = Some(::display::DisplayMode::Reply(twid, full_reply));
                 }
             } else {
-                tweeter.display_info.status(format!("No tweet for id: {:?}", twid));
+                display_info.status(format!("No tweet for id: {:?}", twid));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Cannot parse input: {:?} ({})", id_str, e));
+            display_info.status(format!("Cannot parse input: {:?} ({})", id_str, e));
         }
     }
 }
 
-pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential) {
-    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential, display_info: &mut DisplayInfo) {
+    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
         let substituted = ::url_encode(&text);
         let result = match tweeter.current_profile() {
             Some(user_profile) => {
@@ -200,10 +201,10 @@ pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, q
         };
         match result {
             Ok(_) => (),
-            Err(e) => tweeter.display_info.status(e)
+            Err(e) => display_info.status(e)
         }
     } else {
-        tweeter.display_info.status(format!("Tweet stopped existing: {:?}", twid));
+        display_info.status(format!("Tweet stopped existing: {:?}", twid));
     }
 }
 
@@ -215,7 +216,7 @@ pub static QUOTE: Command = Command {
     help_str: "Quote <tweet_id> with context <text>"
 };
 
-fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let mut text: String = line.trim().to_string();
     if let Some(id_end_idx) = text.find(" ") {
         let reply_bare = text.split_off(id_end_idx + 1);
@@ -225,7 +226,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
             let maybe_id = TweetId::parse(id_str.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                         let substituted = ::url_encode(reply);
                         let attachment_url = ::url_encode(
                             &format!(
@@ -250,21 +251,21 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         };
                         match result {
                             Ok(_) => (),
-                            Err(e) => tweeter.display_info.status(e)
+                            Err(e) => display_info.status(e)
                         }
                     } else {
-                        tweeter.display_info.status(format!("No tweet found for id {:?}", twid));
+                        display_info.status(format!("No tweet found for id {:?}", twid));
                     }
                 },
                 Err(e) => {
-                    tweeter.display_info.status(format!("Invalid id: {:?}", id_str));
+                    display_info.status(format!("Invalid id: {:?}", id_str));
                 }
             }
         } else {
-            tweeter.display_info.status("rep <id> your sik reply".to_owned());
+            display_info.status("rep <id> your sik reply".to_owned());
         }
     } else {
-        tweeter.display_info.status("rep <id> your sik reply".to_owned());
+        display_info.status("rep <id> your sik reply".to_owned());
     }
 }
 
@@ -276,11 +277,11 @@ pub static RETWETE: Command = Command {
     help_str: "Retweet <tweet_id>"
 };
 
-fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     match TweetId::parse(line.clone()) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
-            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.id.to_owned()) {
                 let result = match tweeter.current_profile() {
                     Some(user_profile) => {
                         queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds)
@@ -289,14 +290,14 @@ fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) 
                 };
                 match result {
                     Ok(_) => (),
-                    Err(e) => tweeter.display_info.status(e)
+                    Err(e) => display_info.status(e)
                 }
             } else {
-                tweeter.display_info.status(format!("No tweet for id {:?}", twid));
+                display_info.status(format!("No tweet for id {:?}", twid));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Invalid id: {:?}", line));
+            display_info.status(format!("Invalid id: {:?}", line));
         }
     }
 }

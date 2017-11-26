@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use std;
 use std::collections::HashMap;
@@ -22,7 +23,7 @@ static OAUTH_REQUEST_TOKEN_URL: &str = "https://api.twitter.com/oauth/request_to
 static OAUTH_AUTHORIZE_URL: &str = "https://api.twitter.com/oauth/authorize";
 static OAUTH_ACCESS_TOKEN_URL: &str = "https://api.twitter.com/oauth/access_token";
 
-fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     // step 0: get an oauth token.
     // https://developer.twitter.com/en/docs/basics/authentication/api-reference/request_token with
     // callback set to oob so the user will later get a PIN.
@@ -42,13 +43,13 @@ fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                         key: as_map["oauth_token"].to_owned(),
                         secret: as_map["oauth_token_secret"].to_owned()
                     });
-                    tweeter.display_info.status(format!("Now enter `pin` with the code at {}?oauth_token={}", OAUTH_AUTHORIZE_URL, as_map["oauth_token"]));
+                    display_info.status(format!("Now enter `pin` with the code at {}?oauth_token={}", OAUTH_AUTHORIZE_URL, as_map["oauth_token"]));
                 }
                 Err(_) =>
-                    tweeter.display_info.status("couldn't rebuild url".to_owned())
+                    display_info.status("couldn't rebuild url".to_owned())
             },
         Err(e) =>
-            tweeter.display_info.status(format!("request token url error: {}", e))
+            display_info.status(format!("request token url error: {}", e))
     };
 }
 
@@ -60,9 +61,9 @@ pub static PIN: Command = Command {
     help_str: "Complete account auth. Enter PIN from prior `auth` link to connect an account."
 };
 
-fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     if tweeter.WIP_auth.is_none() {
-        tweeter.display_info.status("Begin authorizing an account with `auth` first.".to_owned());
+        display_info.status("Begin authorizing an account with `auth` first.".to_owned());
         return;
     }
 
@@ -102,20 +103,20 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                     match queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &tweeter.app_key, &user_credential) {
                         Ok(settings) => {
                             let user_handle = settings["screen_name"].as_str().unwrap().to_owned();
-                            tweeter.add_profile(tw::TwitterProfile::new(user_credential, tw::user::User::default()), Some(user_handle.clone()));
+                            tweeter.add_profile(tw::TwitterProfile::new(user_credential, tw::user::User::default()), Some(user_handle.clone()), display_info);
                             tweeter.WIP_auth = None;
                             tweeter.state = tw::AppState::Reconnect(user_handle);
-                            tweeter.display_info.status("Looks like you authed! Connecting...".to_owned());
+                            display_info.status("Looks like you authed! Connecting...".to_owned());
                         },
                         Err(_) => {
-                            tweeter.display_info.status("Auth failed - couldn't find your handle.".to_owned());
+                            display_info.status("Auth failed - couldn't find your handle.".to_owned());
                         }
                     };
                 },
                 Err(_) =>
-                    tweeter.display_info.status("couldn't rebuild url".to_owned())
+                    display_info.status("couldn't rebuild url".to_owned())
             },
         Err(e) =>
-            tweeter.display_info.status(format!("request token url error: {}", e))
+            display_info.status(format!("request token url error: {}", e))
     };
 }

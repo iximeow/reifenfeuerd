@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
@@ -14,7 +15,7 @@ pub static UNFOLLOW: Command = Command {
     help_str: "Unfollow <handle>. No @ prefix in <handle>!"
 };
 
-fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let screen_name = line.trim();
     let result = match tweeter.current_profile() {
         Some(user_profile) => {
@@ -24,7 +25,7 @@ fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
     };
     match result {
         Ok(_resp) => (),
-        Err(e) => tweeter.display_info.status(format!("unfl request error: {}", e))
+        Err(e) => display_info.status(format!("unfl request error: {}", e))
     }
 }
 
@@ -36,11 +37,11 @@ pub static FOLLOW: Command = Command {
     help_str: "Follow <handle>. No @ prefix in <handle>!"
 };
 
-fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let screen_name = line.trim();
     match tweeter.current_profile().map(|profile| profile.to_owned()) {
         Some(user_profile) => {
-            tweeter.display_info.status(
+            display_info.status(
                 format!(
                     "fl resp: {:?}",
                     queryer.do_api_post(
@@ -51,6 +52,6 @@ fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
                 )
             )
         },
-        None => tweeter.display_info.status("No logged in user to follow from".to_owned())
+        None => display_info.status("No logged in user to follow from".to_owned())
     };
 }

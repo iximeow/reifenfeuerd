@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use std;
 use std::collections::HashMap;
@@ -14,12 +15,12 @@ pub static PROFILE: Command = Command {
     help_str: "Switch to profile <profile_name>"
 };
 
-fn switch_profile(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn switch_profile(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     let profile_name = line.trim();
     if tweeter.profiles.contains_key(profile_name) {
         tweeter.curr_profile = Some(profile_name.to_owned());
     } else {
-        tweeter.display_info.status(format!("No profile named {}", profile_name))
+        display_info.status(format!("No profile named {}", profile_name))
     };
 }
 
@@ -31,8 +32,8 @@ pub static PROFILES: Command = Command {
     help_str: "List all profiles"
 };
 
-fn list_profiles(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
-    tweeter.display_info.recv(::display::Infos::Text(
+fn list_profiles(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
+    display_info.recv(::display::Infos::Text(
         tweeter.profiles.keys().map(|key| key.to_owned()).collect()
     ));
 }

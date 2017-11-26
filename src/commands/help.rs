@@ -1,3 +1,4 @@
+use display::DisplayInfo;
 use tw;
 use ::Queryer;
 
@@ -11,6 +12,6 @@ pub static HELP: Command = Command {
     help_str: "This help prompt."
 };
 
-fn help(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer) {
+fn help(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     tweeter.state = tw::AppState::ShowHelp;
 }

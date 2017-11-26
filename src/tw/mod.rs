@@ -23,6 +23,8 @@ use self::tweet::Tweet;
 pub mod user;
 use self::user::User;
 
+use display::DisplayInfo;
+
 #[derive(Clone)]
 pub enum AppState {
     Shutdown,
@@ -108,8 +110,8 @@ pub struct TwitterCache {
     pub caching_permitted: bool,
     #[serde(skip)]
     id_conversions: IdConversions,
-    #[serde(skip)]
-    pub display_info: display::DisplayInfo,
+//    #[serde(skip)]
+//    pub display_info: display::DisplayInfo,
     #[serde(skip)]
     pub state: AppState,
     #[serde(skip)]
@@ -226,10 +228,7 @@ impl IdConversions {
     //
     // except in the TweetId::Twitter case we TweetId -> Option<Tweet> -> Option<u64> ... to ->
     // Option<Tweet> in the future?
-    //                          // WHY must we take mutable borrow of TwitterCache here, you ask?
-    //                          // well, because it contains display_info, and retrieve_tweet can
-    //                          // end up logging, for now!
-    fn to_inner_id(&self, tweeter: &mut TwitterCache, twid: TweetId) -> Option<u64> {
+    fn to_inner_id(&self, tweeter: &TwitterCache, twid: TweetId, display_info: &mut DisplayInfo) -> Option<u64> {
         match twid {
             TweetId::Today(num) => {
                 let first_for_today: u64 = 0;
@@ -240,7 +239,7 @@ impl IdConversions {
                 Some(first_for_date + num)
             },
             TweetId::Bare(num) => Some(num),
-            twid @ TweetId::Twitter(_) => tweeter.retrieve_tweet(&twid).map(|x| x.internal_id)
+            twid @ TweetId::Twitter(_) => tweeter.retrieve_tweet(&twid, display_info).map(|x| x.internal_id)
         }
     }
 }
@@ -405,7 +404,6 @@ impl TwitterCache {
             caching_permitted: true,
             threads: HashMap::new(),
             id_conversions: IdConversions::default(),
-            display_info: display::DisplayInfo::default(),
             state: AppState::View,
             connection_map: HashMap::new()
         }
@@ -428,13 +426,13 @@ impl TwitterCache {
 
     // TODO: pull out the "Cache" part of TwitterCache, it can be serialized/deserialized - the
     // rest of the history is just for the running instance..
-    pub fn handle_user_input(&mut self, line: Vec<u8>, mut queryer: &mut Queryer) {
+    pub fn handle_user_input(&mut self, line: Vec<u8>, mut queryer: &mut Queryer, display_info: &mut DisplayInfo) {
         let command_bare = String::from_utf8(line).unwrap();
         let command = command_bare.trim();
         if let Some((line, cmd)) = parse_word_command(&command, ::commands::COMMANDS) {
-            (cmd.exec)(line.to_owned(), self, &mut queryer);
+            (cmd.exec)(line.to_owned(), self, &mut queryer, display_info);
         } else {
-            self.display_info.status(format!("I don't know what {} means", command).to_string());
+            display_info.status(format!("I don't know what {} means", command).to_string());
         }
     }
 
@@ -443,10 +441,10 @@ impl TwitterCache {
         cache.caching_permitted = false;
         cache
     }
-    pub fn add_profile(&mut self, profile: TwitterProfile, name: Option<String>) {
+    pub fn add_profile(&mut self, profile: TwitterProfile, name: Option<String>, display_info: &mut DisplayInfo) {
         self.profiles.insert(name.unwrap_or(profile.user.handle.to_owned()), profile);
         if self.caching_permitted {
-            self.store_cache();
+            self.store_cache(display_info);
         }
     }
     fn cache_user(&mut self, user: User) {
@@ -479,7 +477,7 @@ impl TwitterCache {
             self.number_and_insert_tweet(tweet);
         }
     }
-    pub fn store_cache(&mut self) {
+    pub fn store_cache(&mut self, display_info: &mut DisplayInfo) {
         if self.caching_permitted {
             if Path::new(TwitterCache::PROFILE_DIR).is_dir() {
                 let profile = OpenOptions::new()
@@ -491,7 +489,7 @@ impl TwitterCache {
                     .unwrap();
                 serde_json::to_writer(profile, self).unwrap();
             } else {
-                self.display_info.status("No cache dir exists...".to_owned());
+                display_info.status("No cache dir exists...".to_owned());
             }
         }
     }
@@ -504,7 +502,7 @@ impl TwitterCache {
             }
         }
     }
-    pub fn load_cache() -> TwitterCache {
+    pub fn load_cache(display_info: &mut DisplayInfo) -> TwitterCache {
         if Path::new(TwitterCache::PROFILE_CACHE).is_file() {
             let mut buf = vec![];
             let mut profile = File::open(TwitterCache::PROFILE_CACHE).unwrap();
@@ -537,20 +535,20 @@ impl TwitterCache {
                         Err(e) => {
                             // TODO! should be able to un-frick profile after startup.
                             let mut cache = TwitterCache::new_without_caching();
-                            cache.display_info.status(format!("Error reading profile, profile caching disabled... {}", e));
+                            display_info.status(format!("Error reading profile, profile caching disabled... {}", e));
                             cache
                         }
                     }
                 }
                 Err(e) => {
                     let mut cache = TwitterCache::new_without_caching();
-                    cache.display_info.status(format!("Error reading cached profile: {}. Profile caching disabled.", e));
+                    display_info.status(format!("Error reading cached profile: {}. Profile caching disabled.", e));
                     cache
                 }
             }
         } else {
             let mut cache = TwitterCache::new();
-            cache.display_info.status(format!("Hello! First time setup?"));
+            display_info.status(format!("Hello! First time setup?"));
             cache
         }
     }
@@ -581,7 +579,7 @@ impl TwitterCache {
             self.cache_user(user);
         }
     }
-    pub fn cache_api_event(&mut self, conn_id: u8, json: serde_json::Map<String, serde_json::Value>, mut queryer: &mut ::Queryer) {
+    pub fn cache_api_event(&mut self, conn_id: u8, json: serde_json::Map<String, serde_json::Value>, mut queryer: &mut ::Queryer, display_info: &mut DisplayInfo) {
         /* don't really care to hold on to who fav, unfav, ... when, just pick targets out. */
         match json.get("event").and_then(|x| x.as_str()) {
             Some("quoted_tweet") => {
@@ -610,7 +608,7 @@ impl TwitterCache {
             },
             Some("delete") => {
                 let user_id = json["delete"]["status"]["user_id_str"].as_str().unwrap().to_string();
-                self.fetch_user(&user_id, &mut queryer);
+                self.fetch_user(&user_id, &mut queryer, display_info);
             },
             Some("follow") => {
                 let follower = json["source"]["id_str"].as_str().unwrap().to_string();
@@ -641,7 +639,7 @@ impl TwitterCache {
             /* nothing else to care about now, i think? */
         }
     }
-    pub fn retrieve_tweet(&mut self, tweet_id: &TweetId) -> Option<&Tweet> {
+    pub fn retrieve_tweet(&self, tweet_id: &TweetId, display_info: &mut DisplayInfo) -> Option<&Tweet> {
         match tweet_id {
             &TweetId::Bare(ref id) => {
                 let maybe_tweet_id = self.id_conversions.id_to_tweet_id.get(id);
@@ -652,11 +650,11 @@ impl TwitterCache {
             },
             &TweetId::Today(ref id) => {
                 let inner_id = self.id_conversions.id_to_tweet_id.get(id);
-                self.display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
+                display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
                 None
             },
             &TweetId::Dated(ref date, ref id) => {
-                self.display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
+                display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
                 None
             },
             &TweetId::Twitter(ref id) => self.tweets.get(id)
@@ -665,37 +663,37 @@ impl TwitterCache {
     pub fn retrieve_user(&self, user_id: &String) -> Option<&User> {
         self.users.get(user_id)
     }
-    pub fn fetch_tweet(&mut self, tweet_id: &TweetId, mut queryer: &mut ::Queryer) -> Option<&Tweet> {
+    pub fn fetch_tweet(&mut self, tweet_id: &TweetId, mut queryer: &mut ::Queryer, display_info: &mut DisplayInfo) -> Option<&Tweet> {
         match tweet_id {
             &TweetId::Bare(ref id) => {
                 // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id)
+                self.retrieve_tweet(tweet_id, display_info)
             }
             &TweetId::Today(ref id) => {
                 // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id)
+                self.retrieve_tweet(tweet_id, display_info)
             },
             &TweetId::Dated(ref date, ref id) => {
                 // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id)
+                self.retrieve_tweet(tweet_id, display_info)
             },
             &TweetId::Twitter(ref id) => {
                 if !self.tweets.contains_key(id) {
                     match self.look_up_tweet(id, &mut queryer) {
                         Ok(json) => self.cache_api_tweet(json),
-                        Err(e) => self.display_info.status(format!("Unable to retrieve tweet {}:\n{}", id, e))
+                        Err(e) => display_info.status(format!("Unable to retrieve tweet {}:\n{}", id, e))
                     };
                 }
-                self.retrieve_tweet(tweet_id)
+                self.retrieve_tweet(tweet_id, display_info)
             }
         }
     }
-    pub fn fetch_user(&mut self, user_id: &String, mut queryer: &mut ::Queryer) -> Option<&User> {
+    pub fn fetch_user(&mut self, user_id: &String, mut queryer: &mut ::Queryer, display_info: &mut DisplayInfo) -> Option<&User> {
         if !self.users.contains_key(user_id) {
             let maybe_parsed = self.look_up_user(user_id, &mut queryer).and_then(|x| User::from_json(x));
             match maybe_parsed {
                 Ok(tw) => self.cache_user(tw),
-                Err(e) => self.display_info.status(format!("Unable to retrieve user {}:\n{}", user_id, e))
+                Err(e) => display_info.status(format!("Unable to retrieve user {}:\n{}", user_id, e))
             }
         }
         self.users.get(user_id)
@@ -750,14 +748,15 @@ fn handle_twitter_event(
     conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
-    mut queryer: &mut ::Queryer) {
-    tweeter.cache_api_event(conn_id, structure.clone(), &mut queryer);
+    display_info: &mut DisplayInfo,
+    queryer: &mut ::Queryer) {
+    tweeter.cache_api_event(conn_id, structure.clone(), queryer, display_info);
     match events::Event::from_json(structure) {
         Ok(event) => {
-            tweeter.display_info.recv(display::Infos::Event(event));
+            display_info.recv(display::Infos::Event(event));
         },
         Err(e) => {
-            tweeter.display_info.status(format!("Unknown twitter json: {:?}", e));
+            display_info.status(format!("Unknown twitter json: {:?}", e));
         }
     }
 }
@@ -766,9 +765,10 @@ fn handle_twitter_delete(
     conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
+    display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     /*
-    tweeter.display_info.recv(display::Infos::Event(
+    display_info.recv(display::Infos::Event(
         events::Event::Deleted {
             user_id: structure["delete"]["status"]["user_id_str"].as_str().unwrap().to_string(),
             twete_id: structure["delete"]["status"]["id_str"].as_str().unwrap().to_string()
@@ -781,10 +781,11 @@ fn handle_twitter_twete(
     conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
+    display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     let twete_id = structure["id_str"].as_str().unwrap().to_string();
     tweeter.cache_api_tweet(serde_json::Value::Object(structure));
-    tweeter.display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete_id)));
+    display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete_id)));
     // display::render_twete(&twete_id, tweeter);
 }
 
@@ -792,15 +793,17 @@ fn handle_twitter_dm(
     conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
+    display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     // show DM
-    tweeter.display_info.recv(display::Infos::DM(structure["direct_message"]["text"].as_str().unwrap().to_string()));
+    display_info.recv(display::Infos::DM(structure["direct_message"]["text"].as_str().unwrap().to_string()));
 }
 
 fn handle_twitter_welcome(
     conn_id: u8,
     structure: serde_json::Map<String, serde_json::Value>,
     tweeter: &mut TwitterCache,
+    display_info: &mut DisplayInfo,
     queryer: &mut ::Queryer) {
     let app_key = tweeter.app_key.clone();
     let followers_changes = {
@@ -823,20 +826,20 @@ fn handle_twitter_welcome(
     match followers_changes {
         Ok((my_name, new_following, lost_following, (new_followers, lost_followers))) => {
             for user in new_following {
-                tweeter.display_info.status(format!("New following! {}", user));
+                display_info.status(format!("New following! {}", user));
             }
             for user in lost_following {
-                tweeter.display_info.status(format!("Not following {} anymore", user));
+                display_info.status(format!("Not following {} anymore", user));
             }
             for user in new_followers {
-                tweeter.display_info.status(format!("New follower! {}", user));
+                display_info.status(format!("New follower! {}", user));
             }
             for user in lost_followers {
-                tweeter.display_info.status(format!("{} isn't following anymore", user));
+                display_info.status(format!("{} isn't following anymore", user));
             }
         },
         Err(e) => {
-            tweeter.display_info.status(e);
+            display_info.status(e);
         }
     }
 }
@@ -845,22 +848,23 @@ pub fn handle_message(
     conn_id: u8,
     twete: serde_json::Value,
     tweeter: &mut TwitterCache,
+    display_info: &mut DisplayInfo,
     queryer: &mut ::Queryer
 ) {
     match twete {
         serde_json::Value::Object(objmap) => {
             if objmap.contains_key("event") {
-                handle_twitter_event(conn_id, objmap, tweeter, queryer);
+                handle_twitter_event(conn_id, objmap, tweeter, display_info, queryer);
             } else if objmap.contains_key("friends") {
-                handle_twitter_welcome(conn_id, objmap, tweeter, queryer);
+                handle_twitter_welcome(conn_id, objmap, tweeter, display_info, queryer);
             } else if objmap.contains_key("delete") {
-                handle_twitter_delete(conn_id, objmap, tweeter, queryer);
+                handle_twitter_delete(conn_id, objmap, tweeter, display_info, queryer);
             } else if objmap.contains_key("user") && objmap.contains_key("id") {
-                handle_twitter_twete(conn_id, objmap, tweeter, queryer);
+                handle_twitter_twete(conn_id, objmap, tweeter, display_info, queryer);
             } else if objmap.contains_key("direct_message") {
-                handle_twitter_dm(conn_id, objmap, tweeter, queryer);
+                handle_twitter_dm(conn_id, objmap, tweeter, display_info, queryer);
             } else {
-                tweeter.display_info.status(format!("Unknown json: {:?}", objmap));
+                display_info.status(format!("Unknown json: {:?}", objmap));
             }
 //            self.display_info.status("");
         },
