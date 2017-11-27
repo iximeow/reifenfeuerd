@@ -178,17 +178,19 @@ mod tests {
     use super::*;
     #[test]
     fn tweet_id_parse_test() {
-        assert_eq!(TweetId::parse("12345".to_string()), Some(TweetId::Today(12345)));
-        assert_eq!(TweetId::parse("20170403:12345".to_string()), Some(TweetId::Dated("20170403".to_string(), 12345)));
-        assert_eq!(TweetId::parse(":12345".to_string()), Some(TweetId::Bare(12345)));
-        assert_eq!(TweetId::parse("twitter:12345".to_string()), Some(TweetId::Twitter("12345".to_string())));
-        assert_eq!(TweetId::parse("twitter:asdf".to_string()), Some(TweetId::Twitter("asdf".to_string())));
-        assert_eq!(TweetId::parse("a2345".to_string()), None);
-        assert_eq!(TweetId::parse(":".to_string()), None);
-        assert_eq!(TweetId::parse("::".to_string()), None);
-        assert_eq!(TweetId::parse("a:13234".to_string()), None);
-        assert_eq!(TweetId::parse(":a34".to_string()), None);
-        assert_eq!(TweetId::parse("asdf:34".to_string()), None);
+        assert_eq!(TweetId::parse("12345".to_string()), Ok(TweetId::Today(12345)));
+        assert_eq!(TweetId::parse("20170403:12345".to_string()), Ok(TweetId::Dated("20170403".to_string(), 12345)));
+        assert_eq!(TweetId::parse(":12345".to_string()), Ok(TweetId::Bare(12345)));
+        assert_eq!(TweetId::parse("twitter:12345".to_string()), Ok(TweetId::Twitter("12345".to_string())));
+        assert_eq!(TweetId::parse("twitter:asdf".to_string()), Ok(TweetId::Twitter("asdf".to_string())));
+        assert_eq!(TweetId::parse("a2345".to_string()), Err("Unrecognized id string: a2345".to_owned()));
+        // TODO: clarify
+        assert_eq!(TweetId::parse(":".to_string()), Err("cannot parse integer from empty string".to_owned()));
+        // TODO: clarify
+        assert_eq!(TweetId::parse("::".to_string()), Err("invalid digit found in string".to_owned()));
+        assert_eq!(TweetId::parse("a:13234".to_string()), Err("Unrecognized id string: a:13234".to_owned()));
+        assert_eq!(TweetId::parse(":a34".to_string()), Err("invalid digit found in string".to_owned()));
+        assert_eq!(TweetId::parse("asdf:34".to_string()), Err("Unrecognized id string: asdf:34".to_owned()));
     }
 }
 

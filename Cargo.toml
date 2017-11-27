@@ -12,8 +12,8 @@ a nice twitter
 [[bin]]
 name = "twidder"
 # path = "main.rs"
-test = false
-bench = false
+#test = false
+#bench = false
 
 [dependencies]
 "termios" = "0.2.2"

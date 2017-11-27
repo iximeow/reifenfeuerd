@@ -3,6 +3,9 @@ extern crate termion;
 use std::io::Write;
 use std::io::stdout;
 
+use std::iter::Iterator;
+use std::fmt;
+
 use self::termion::color;
 use self::termion::{clear, cursor};
 
@@ -75,6 +78,8 @@ impl DisplayInfo {
  * wraps x so each line is width or fewer characters, after splitting by \n.
  */
 fn into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
+    ansi_aware_into_display_lines(x, width)
+    /*
     let split_on_newline: Vec<String> = x.into_iter()
         .flat_map(|x| x.split("\n")
             .map(|x| x.to_owned())
@@ -87,6 +92,251 @@ fn into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
             .collect::<Vec<String>>())
         .collect();
     wrapped
+     */
+}
+
+#[derive(Clone)]
+enum AnsiInfo {
+    Esc,
+    EscBracket,
+    CSI(String), // CSI <n_string> with no tailing character ... yet?
+    FullSequence(String, char) // CSI n_string param
+}
+
+impl fmt::Display for AnsiInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+        match self {
+            &AnsiInfo::Esc => {
+                write!(f, "\x1b")
+            },
+            &AnsiInfo::EscBracket => {
+                write!(f, "\x1b[")
+            },
+            &AnsiInfo::CSI(ref n) => {
+                write!(f, "\x1b[{}", n)
+            },
+            &AnsiInfo::FullSequence(ref n, ref c) => {
+                write!(f, "\x1b[{}{}", n, c)
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct TextState {
+    color: Option<String>, // Box<termion::color::Color>>,
+    underline: bool,
+    italic: bool
+}
+
+/*
+ * wraps x so each line is width for fewer displayed characters
+ * (this probably doesn't work for zero width unicode symbols)
+ *
+ * preserves coloration of the string across splits:
+ *                       | <-- wrap here
+ * "hello talking to \x1b[5m@som\x1b[0m"
+ * "\x1b[5mename\x1b[0m"
+ */
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ansi_display_lines_test() {
+        let initial = "hello talking to \x1b[5m@somename\x1b[0m".to_owned();
+        let split = ::display::ansi_aware_into_display_lines(vec![initial], 22);
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0], "hello talking to \x1b[5m@some\x1b[0m");
+        assert_eq!(split[1], "\x1b[5mname\x1b[0m");
+    }
+}
+fn ansi_aware_into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
+    let mut current_color: Option<u8> = None;
+    let mut ansi_code: Option<AnsiInfo> = None;
+    let mut text_state: Option<TextState> = None;
+    let mut display_len: u16 = 0;
+    let mut split_lines = Vec::new();
+    if x.len() == 0 {
+        return split_lines;
+    } else {
+        split_lines.push(String::new());
+    }
+    for (i, line) in x.iter().enumerate() {
+        for chr in line.chars() {
+            let addend = match chr {
+                '\x1b' => {
+                    match ansi_code.clone() {
+                        None => {
+                            ansi_code = Some(AnsiInfo::Esc);
+                            "".to_owned()
+                        }
+                        Some(ansi) => {
+                            ansi_code = Some(AnsiInfo::Esc);
+                            format!("{}", ansi)
+                        }
+                    }
+                },
+                '[' => {
+                    match ansi_code.clone() {
+                        Some(AnsiInfo::Esc) => {
+                            ansi_code = Some(AnsiInfo::EscBracket);
+                            "".to_owned()
+                        },
+                        Some(info @ AnsiInfo::EscBracket) => {
+                            format!("{}[", info)
+                        },
+                        Some(info @ AnsiInfo::CSI(_)) => {
+                            format!("{}[", info)
+                        },
+                        Some(info @ AnsiInfo::FullSequence(_, _)) => {
+                            format!("{}[", info)
+                        },
+                        None => {
+                            "[".to_owned()
+                        }
+                    }
+                },
+                c @ '0'...'9' => {
+                    match ansi_code.clone() {
+                        Some(AnsiInfo::EscBracket) => {
+                            ansi_code = Some(AnsiInfo::CSI(c.to_string()));
+                            "".to_owned()
+                        },
+                        Some(info @ AnsiInfo::FullSequence(_, _)) => {
+                            ansi_code = None;
+                            format!("{}{}", info, c)
+                        }
+                        Some(AnsiInfo::CSI(mut n)) => {
+                            n.push(c);
+                            ansi_code = Some(AnsiInfo::CSI(n));
+                            "".to_owned()
+                        },
+                        Some(AnsiInfo::Esc) => {
+                            //  TODO: flush
+                            ansi_code = None;
+                            format!("{}{}", AnsiInfo::Esc, c)
+                        },
+                        None => {
+                            c.to_string()
+                        }
+                    }
+                },
+                ';' => {
+                    match ansi_code.clone() {
+                        Some(info @ AnsiInfo::FullSequence(_, _)) => {
+                            ansi_code = None;
+                            format!("{};", info)
+                        }
+                        Some(AnsiInfo::EscBracket) => {
+                            ansi_code = None;
+                            format!("{};", AnsiInfo::EscBracket)
+                        },
+                        Some(AnsiInfo::CSI(n)) => {
+                            ansi_code = Some(AnsiInfo::CSI(format!("{};", n)));
+                            "".to_string()
+                        },
+                        Some(AnsiInfo::Esc) => {
+                            ansi_code = None;
+                            format!("{};", AnsiInfo::Esc)
+                        },
+                        None => {
+                            ';'.to_string()
+                        }
+                    }
+                },
+                c => {
+                    match ansi_code.clone() {
+                        Some(info @ AnsiInfo::FullSequence(_, _)) => {
+                            panic!("This should not be reachable - a FullSequence should be flushed immediately after construction.");
+                        }
+                        Some(AnsiInfo::EscBracket) => {
+                            ansi_code = Some(AnsiInfo::FullSequence("".to_owned(), c));
+                            "".to_string()
+                        },
+                        Some(AnsiInfo::CSI(n)) => {
+                            ansi_code = Some(AnsiInfo::FullSequence(n, c));
+                            "".to_string()
+                        },
+                        Some(AnsiInfo::Esc) => {
+                            ansi_code = None;
+                            format!("{}{}", AnsiInfo::Esc, c)
+                        },
+                        None => {
+                            c.to_string()
+                        }
+                    }
+                }
+            };
+
+            // if we've produced a full sequence, dump that to the string and set that as the
+            // curret info
+            // 
+            // TODO: support ansi sequences other than m aka colors.
+
+            if let Some(AnsiInfo::FullSequence(n, c)) = ansi_code.clone() {
+                // this is not printable so we don't advance the printable text counter
+                split_lines.last_mut().unwrap().push_str(&format!("\x1b[{}{}", n, c));
+                text_state = match text_state {
+                    None => {
+                        if n != "0" && n != "" {
+                            Some(TextState {
+                                color: Some(n),
+                                underline: false,
+                                italic: false
+                            })
+                        } else {
+                            None
+                        }
+                    },
+                    Some(mut state) => {
+                        if n == "0" || n == "" {
+                            state.color = None;
+                        } else {
+                            state.color = Some(n);
+                        };
+                        Some(state)
+                    }
+                };
+                ansi_code = None;
+            }
+
+            for chr in addend.chars() {
+                // If we're adding a new character, see if we have to add a new line
+                if display_len == width || chr == '\n' {
+                    match &text_state {
+                        &Some(ref state) => {
+                            split_lines.last_mut().unwrap().push_str("\x1b[0m");
+                            split_lines.push(String::new());
+                            split_lines.last_mut().unwrap().push_str(&format!("\x1b[{}m", state.color.clone().unwrap_or("".to_owned())));
+                            display_len = 0;
+                        }
+                        &None => {
+                            split_lines.push(String::new());
+                            display_len = 0;
+                        }
+                    }
+                }
+                // whatever happened, we're now ready to add a character
+                split_lines.last_mut().unwrap().push(chr);
+                display_len += 1;
+            }
+        }
+
+        if i < x.len() - 1 {
+            match &text_state {
+                &Some(ref state) => {
+                    split_lines.last_mut().unwrap().push_str("\x1b[0m");
+                    split_lines.push(String::new());
+                    split_lines.last_mut().unwrap().push_str(&format!("\x1b[{}m", state.color.clone().unwrap_or("".to_owned())));
+                    display_len = 0;
+                }
+                &None => {
+                    split_lines.push(String::new());
+                    display_len = 0;
+                }
+            }
+        }
+    }
+    split_lines
 }
 
 pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Result<(), std::io::Error> {
