@@ -686,12 +686,56 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
             result.push(id_string);
             result.push(author_string);
 
-            let mut original_lines: Vec<String> = twete.text
-//                .replace("\r", "\\r")
+            let raw_lines: Vec<String> = twete.text
                 .split("\n").map(|line| line.replace("\r", "\\r")).collect();
 
+            // now colorize @'s:
+            let mut colorized_lines: Vec<String> = vec![];
+
+            for line in raw_lines {
+                let mut name: Option<String> = None;
+                let mut new_line = String::new();
+                for c in line.chars() {
+                    name = match name {
+                        Some(mut handle) => {
+                            match c {
+                                'a'...'z' | 'A'...'Z' | '0'...'9' | '_' => {
+                                    // so if we have a handle WIP, append to that string.
+                                    handle.push(c);
+                                    Some(handle)
+                                },
+                                c => {
+                                    // we HAD a handle, this just terminated it.
+                                    // if it was empty string, it's not really a mention, we can
+                                    // discard it.
+                                    if handle.len() > 0 {
+                                        new_line.push_str(&format!("{}@{}{}{}", color_for(&handle), &handle, termion::style::Reset, c));
+                                    } else {
+                                        new_line.push('@');
+                                        new_line.push(c);
+                                    }
+                                    None
+                                }
+                            }
+                        },
+                        None => {
+                            if c == '@' {
+                                Some(String::new())
+                            } else {
+                                new_line.push(c);
+                                None
+                            }
+                        }
+                    }
+                }
+                if let Some(mut handle) = name {
+                    new_line.push_str(&format!("{}@{}{}", color_for(&handle), &handle, termion::style::Reset));
+                }
+                colorized_lines.push(new_line);
+            }
+
             let mut urls_to_include: Vec<&str> = vec![];
-            let urls_replaced = original_lines
+            let urls_replaced = colorized_lines
                 .into_iter()
                 .map(|line| {
                     let mut result: String = line.to_owned();
