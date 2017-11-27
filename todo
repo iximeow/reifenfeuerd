@@ -9,11 +9,7 @@ follow/new follower notifications display the wrong person
 
 up/down scroll
 
-measure length of lines with ansi sequences properly
-
 name/handle colored by user id instead of handle
-
-color handles in text
 
 recursively display quoted tweets?
 
