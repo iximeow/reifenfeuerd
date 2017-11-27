@@ -1,0 +1,30 @@
+hm.* ->  thinking emoji
+
+emoji -> :description:
+:description: -> emoji
+
+granular thread view (pageup shouldn't skip the whole thread through...)
+
+follow/new follower notifications display the wrong person
+
+up/down scroll
+
+measure length of lines with ansi sequences properly
+
+name/handle colored by user id instead of handle
+
+color handles in text
+
+recursively display quoted tweets?
+
+ratio
+
+dated tweet ids
+
+history
+
+per-account activity info
+
+show scrollback if any
+
+quick tweet interaction (goto :1234, f<ret> to fav, rep<ret> to reply, ...)
