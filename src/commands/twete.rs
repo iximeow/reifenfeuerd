@@ -22,7 +22,7 @@ fn del(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
     match TweetId::parse(line.clone()) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
-            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.id.to_owned()) {
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
                 let result = match tweeter.current_profile() {
                     Some(user_profile) => queryer.do_api_post(&format!("{}/{}.json", DEL_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to delete as".to_owned())
@@ -100,7 +100,7 @@ fn thread(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, d
             let maybe_id = TweetId::parse(id_str.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                         let handle = &tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                         // TODO: definitely breaks if you change your handle right now
                         if handle == &user_profile.user.handle {
@@ -152,13 +152,13 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
     let maybe_id = TweetId::parse(id_str.to_owned());
     match maybe_id {
         Ok(twid) => {
-            if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+            if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                 // get handles to reply to...
                 let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
                 let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
                 ats.remove_item(&author_handle);
                 ats.insert(0, author_handle);
-                if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id), display_info)).map(|x| x.clone()) {
+                if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
                     let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
                     ats.remove_item(&rt_author_handle);
                     ats.insert(1, rt_author_handle);
@@ -191,7 +191,7 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
 }
 
 pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential, display_info: &mut DisplayInfo) {
-    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
         let substituted = ::url_encode(&text);
         let result = match tweeter.current_profile() {
             Some(user_profile) => {
@@ -226,7 +226,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
             let maybe_id = TweetId::parse(id_str.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                         let substituted = ::url_encode(reply);
                         let attachment_url = ::url_encode(
                             &format!(
@@ -281,7 +281,7 @@ fn retwete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, 
     match TweetId::parse(line.clone()) {
         Ok(twid) => {
             // TODO this really converts twid to a TweetId::Twitter
-            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid, display_info).map(|x| x.id.to_owned()) {
+            if let Some(twitter_id) = tweeter.retrieve_tweet(&twid).map(|x| x.id.to_owned()) {
                 let result = match tweeter.current_profile() {
                     Some(user_profile) => {
                         queryer.do_api_post(&format!("{}/{}.json", RT_TWEET_URL, twitter_id), &tweeter.app_key, &user_profile.creds)

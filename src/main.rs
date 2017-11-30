@@ -1,6 +1,7 @@
 #![feature(vec_remove_item)]
 extern crate serde_json;
 
+extern crate chrono;
 extern crate termion;
 extern crate termios;
 

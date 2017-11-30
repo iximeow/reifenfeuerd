@@ -1,5 +1,7 @@
 extern crate serde_json;
 
+use chrono::prelude::*;
+
 use std::collections::HashMap;
 
 use tw::user::User;
@@ -10,6 +12,8 @@ pub struct Tweet {
     pub author_id: String,
     pub text: String,
     pub created_at: String,     // lol
+    #[serde(default = "Utc::now")]
+    pub recieved_at: DateTime<Utc>,
     #[serde(skip_serializing_if="HashMap::is_empty")]
     #[serde(default = "HashMap::default")]
     pub urls: HashMap<String, String>,
@@ -84,6 +88,7 @@ impl Tweet {
                         author_id: author_id.to_owned(),
                         text: text,
                         created_at: created_at.to_owned(),
+                        recieved_at: Utc::now(),
                         urls: url_map,
                         quoted_tweet_id: json_map.get("quoted_status_id_str")
                             .and_then(|x| x.as_str())
