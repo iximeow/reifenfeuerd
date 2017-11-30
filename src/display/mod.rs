@@ -345,9 +345,10 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             // draw input prompt
             let mut i = 0;
             let log_size = 4;
-            let last_elem = display_info.log.len().saturating_sub(log_size);
+            let last_tail_log = display_info.log.len().saturating_sub(display_info.infos_seek as usize);
+            let first_tail_log = last_tail_log.saturating_sub(log_size);
             {
-                let to_show = display_info.log[last_elem..].iter().rev();
+                let to_show = display_info.log[first_tail_log..last_tail_log].iter().rev();
                 for line in to_show {
                     print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, display_info.log.len() - 1 - i as usize, display_info.log.len() - 1, line);
                     i = i + 1;
@@ -435,7 +436,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                         let wrapped = if total_length <= 1024 {
                             into_display_lines(pre_split, width)
                         } else {
-                            vec!["This tweet discarded for your convenience".to_owned()]
+                            vec![format!("This tweet discarded for your convenience: (id: {})", id)]
                         };
                         wrapped.into_iter().rev().collect()
                     }
@@ -551,7 +552,7 @@ impl Render for tw::events::Event {
             }
             tw::events::Event::Deleted { user_id, twete_id } => {
                 if let Some(handle) = tweeter.retrieve_user(&user_id).map(|x| &x.handle).map(|x| x.clone()) {
-                    if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned()), display_info).map(|x| x.clone()) {
+                    if let Some(_tweet) = tweeter.retrieve_tweet(&TweetId::Twitter(twete_id.to_owned())).map(|x| x.clone()) {
                         result.push(format!("-------------DELETED------------------"));
                         result.extend(render_twete(&TweetId::Twitter(twete_id), tweeter, display_info, Some(width)));
                         result.push(format!("-------------DELETED------------------"));
@@ -621,7 +622,7 @@ fn pad_lines(lines: Vec<String>, padding: &str) -> Vec<String> {
 
 pub fn render_twete(twete_id: &TweetId, tweeter: &tw::TwitterCache,  display_info: &mut DisplayInfo, width: Option<u16>) -> Vec<String> {
     let mut lines = render_twete_no_recurse(twete_id, tweeter, display_info, width);
-    match tweeter.retrieve_tweet(twete_id, display_info).map(|x| x.clone()) {
+    match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
         Some(twete) => {
             if let Some(ref qt_id) = twete.quoted_tweet_id {
                 lines.extend(pad_lines(render_twete_no_recurse(&TweetId::Twitter(qt_id.to_owned()), tweeter, display_info, width.map(|x| x - 4)), "    "));
@@ -636,7 +637,7 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
     // ~~ reactive ~~ layout if the terminal isn't wide enough? for now just wrap to passed width
     let mut result = Vec::new();
     let id_color = color::Fg(color::Rgb(180, 80, 40));
-    match tweeter.retrieve_tweet(twete_id, display_info).map(|x| x.clone()) {
+    match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
         Some(twete) => {
             // if we got the tweet, the API gave us the user too
             let user = tweeter.retrieve_user(&twete.author_id).map(|x| x.clone()).unwrap();
@@ -657,27 +658,26 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
                 .clone()
                 .map(|rt_id| (TweetId::Twitter(rt_id), Some(TweetId::Twitter(twete.id.to_owned())))).unwrap_or((TweetId::Twitter(twete.id.to_owned()), None));
             // retrieve_* taking mut tweeter REALLY messes stuff up.
-            let tweet = tweeter.retrieve_tweet(&tweet_id, display_info).unwrap().clone();
+            let tweet = tweeter.retrieve_tweet(&tweet_id).unwrap().clone();
+            let tweet_id = tweeter.display_id_for_tweet(&tweet);
             let tweet_author = tweeter.retrieve_user(&tweet.author_id).unwrap().clone();
 
             // now we've unfurled it so id is the original tweet either way, maybe_rt_id is the id
             // of the retweeter tweet if it's there
 
-            let mut id_string = format!("{}id {}", id_color, tweet.internal_id);
+            let mut id_string = format!("{}id {}", id_color, tweet_id);
             let mut author_string = format!("{}{}{} ({}@{}{})", color_for(&tweet_author.handle), tweet_author.name, color::Fg(color::Reset), color_for(&tweet_author.handle), tweet_author.handle, color::Fg(color::Reset));
 
             if let Some(reply_id) = tweet.reply_to_tweet.clone() {
-                let reply_tweet_id = match tweeter.retrieve_tweet(&TweetId::Twitter(reply_id.to_owned()), display_info) {
-                    Some(reply_tweet) => TweetId::Bare(reply_tweet.internal_id),
-                    None => TweetId::Twitter(reply_id)
-                };
+                let reply_tweet_id = tweeter.display_id_for_tweet_id(&TweetId::Twitter(reply_id.to_owned()));
                 id_string.push_str(&format!(" reply to {}", reply_tweet_id))
             }
 
             if let Some(rt_id) = maybe_rt_id {
-                let rt = tweeter.retrieve_tweet(&rt_id, display_info).unwrap().clone();
+                let rt = tweeter.retrieve_tweet(&rt_id).unwrap().clone();
+                let rt_id = tweeter.display_id_for_tweet(&rt);
                 let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
-                id_string.push_str(&format!(" (rt id {})", rt.internal_id));
+                id_string.push_str(&format!(" (rt id {})", rt_id));
                 author_string.push_str(&format!(" via {}{}{} ({}@{}{}) RT", color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset), color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset)));
             }
 

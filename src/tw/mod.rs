@@ -131,17 +131,21 @@ pub struct TwitterCache {
 //   twitter::num   // twiter tweet id num
 struct IdConversions {
     // maps a day to the base id for tweets off that day.
-    id_per_date: HashMap<String, u64>,
-    id_to_tweet_id: HashMap<u64, String>
+    id_to_tweet_id: HashMap<u64, String>,
     // twitter id to id is satisfied by looking up the twitter id in tweeter.tweets and getting
     // .inner_id
+    // YYYYMMDD : day_id : inner_tweet_id
+    tweets_by_date: HashMap<String, HashMap<u64, u64>>,
+    // YYYYMMDD : inner_tweet_id : day_id
+    tweets_by_date_and_tweet_id: HashMap<String, HashMap<u64, u64>>
 }
 
 impl Default for IdConversions {
     fn default() -> Self {
         IdConversions {
-            id_per_date: HashMap::new(),
-            id_to_tweet_id: HashMap::new()
+            id_to_tweet_id: HashMap::new(),
+            tweets_by_date: HashMap::new(),
+            tweets_by_date_and_tweet_id: HashMap::new()
         }
     }
 }
@@ -180,6 +184,7 @@ mod tests {
     fn tweet_id_parse_test() {
         assert_eq!(TweetId::parse("12345".to_string()), Ok(TweetId::Today(12345)));
         assert_eq!(TweetId::parse("20170403:12345".to_string()), Ok(TweetId::Dated("20170403".to_string(), 12345)));
+        assert_eq!(TweetId::parse("20170403:12345".to_string()), Ok(TweetId::Dated("20170403".to_string(), 12345)));
         assert_eq!(TweetId::parse(":12345".to_string()), Ok(TweetId::Bare(12345)));
         assert_eq!(TweetId::parse("twitter:12345".to_string()), Ok(TweetId::Twitter("12345".to_string())));
         assert_eq!(TweetId::parse("twitter:asdf".to_string()), Ok(TweetId::Twitter("asdf".to_string())));
@@ -191,6 +196,57 @@ mod tests {
         assert_eq!(TweetId::parse("a:13234".to_string()), Err("Unrecognized id string: a:13234".to_owned()));
         assert_eq!(TweetId::parse(":a34".to_string()), Err("invalid digit found in string".to_owned()));
         assert_eq!(TweetId::parse("asdf:34".to_string()), Err("Unrecognized id string: asdf:34".to_owned()));
+    }
+
+    #[test]
+    fn test_tweet_retrieval() {
+        let today = Local::now();
+        let yesterday = today - chrono::Duration::days(1);
+        let tweets = vec![
+            Tweet {
+                id: "manual_tweet_1".to_owned(),
+                author_id: "author_1".to_owned(),
+                text: "this is a test".to_owned(),
+                created_at: "1234 not real lol".to_owned(),
+                recieved_at: yesterday,
+                urls: HashMap::new(),
+                quoted_tweet_id: None,
+                rt_tweet: None,
+                reply_to_tweet: None,
+                internal_id: 0
+            },
+            Tweet {
+                id: "manual_tweet_2".to_owned(),
+                author_id: "author_1".to_owned(),
+                text: "this is a test".to_owned(),
+                created_at: "1234 not real lol".to_owned(),
+                recieved_at: today,
+                urls: HashMap::new(),
+                quoted_tweet_id: None,
+                rt_tweet: None,
+                reply_to_tweet: None,
+                internal_id: 0
+            }
+        ];
+
+        let mut tweeter = TwitterCache::new();
+
+        for tweet in &tweets {
+            tweeter.number_and_insert_tweet(tweet.to_owned());
+        }
+
+        assert_eq!(
+            tweeter.retrieve_tweet(&TweetId::Twitter("manual_tweet_1".to_owned())).map(|x| x.id.to_owned()),
+            Some(tweets[0].clone()).map(|x| x.id)
+        );
+        assert_eq!(
+            tweeter.retrieve_tweet(&TweetId::Today(0)).map(|x| x.id.to_owned()),
+            Some(tweets[1].clone()).map(|x| x.id)
+        );
+        assert_eq!(
+            tweeter.retrieve_tweet(&TweetId::Dated(format!("{:04}{:02}{:02}", yesterday.year(), yesterday.month(), yesterday.day()), 0)).map(|x| x.id.to_owned()),
+            Some(tweets[0].clone()).map(|x| x.id)
+        );
     }
 }
 
@@ -230,18 +286,55 @@ impl IdConversions {
     //
     // except in the TweetId::Twitter case we TweetId -> Option<Tweet> -> Option<u64> ... to ->
     // Option<Tweet> in the future?
-    fn to_inner_id(&self, tweeter: &TwitterCache, twid: TweetId, display_info: &mut DisplayInfo) -> Option<u64> {
+    fn to_twitter_id(&self, twid: TweetId) -> Option<String> {
         match twid {
             TweetId::Today(num) => {
-                let first_for_today: u64 = 0;
-                Some(first_for_today + num)
+                let now = Local::now();
+                let now_date_str = format!("{:04}{:02}{:02}", now.year(), now.month(), now.day());
+                let tweet_id = self.tweets_by_date.get(&now_date_str).and_then(|x| x.get(&num));
+                tweet_id.and_then(|x| self.id_to_tweet_id.get(x)).map(|x| x.to_owned())
             },
             TweetId::Dated(date, num) => {
-                let first_for_date: u64 = 0;
-                Some(first_for_date + num)
+                let tweet_id = self.tweets_by_date.get(&date).and_then(|x| x.get(&num));
+                tweet_id.and_then(|x| self.id_to_tweet_id.get(x)).map(|x| x.to_owned())
             },
-            TweetId::Bare(num) => Some(num),
-            twid @ TweetId::Twitter(_) => tweeter.retrieve_tweet(&twid, display_info).map(|x| x.internal_id)
+            TweetId::Bare(num) => self.id_to_tweet_id.get(&num).map(|x| x.to_owned()),
+            TweetId::Twitter(id) => Some(id)
+        }
+    }
+
+    fn to_display_id(&self, twid: &TweetId, tweeter: &TwitterCache) -> TweetId {
+        match twid {
+            id @ &TweetId::Today(_) => id.to_owned(),
+            id @ &TweetId::Dated(_, _) => {
+                tweeter.retrieve_tweet(id).map(|x| TweetId::Bare(x.internal_id)).unwrap_or(id.to_owned())
+            },
+            id @ &TweetId::Bare(_) => {
+                tweeter.retrieve_tweet(id).and_then(|tweet| {
+                    let now = Local::now();
+                    let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+                    if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
+                        let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+                        let today_id = self.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
+                        today_id.map(|x| TweetId::Today(*x))
+                    } else {
+                        None
+                    }
+                }).unwrap_or(id.to_owned())
+            },
+            id @ &TweetId::Twitter(_) => {
+                tweeter.retrieve_tweet(id).and_then(|tweet| {
+                    let now = Local::now();
+                    let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+                    if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
+                        let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+                        let today_id = self.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
+                        today_id.map(|x| TweetId::Today(*x))
+                    } else {
+                        None
+                    }
+                }).unwrap_or(id.to_owned())
+            }
         }
     }
 }
@@ -500,9 +593,43 @@ impl TwitterCache {
             if tw.internal_id == 0 {
                 tw.internal_id = (self.tweets.len() as u64) + 1;
                 self.id_conversions.id_to_tweet_id.insert(tw.internal_id, tw.id.to_owned());
+                let local_recv_time = tw.recieved_at.with_timezone(&Local::now().timezone());
+                let tweet_date = format!("{:04}{:02}{:02}", local_recv_time.year(), local_recv_time.month(), local_recv_time.day());
+                if !self.id_conversions.tweets_by_date.contains_key(&tweet_date) {
+                    self.id_conversions.tweets_by_date.insert(tweet_date.clone(), HashMap::new());
+                }
+                if !self.id_conversions.tweets_by_date_and_tweet_id.contains_key(&tweet_date) {
+                    self.id_conversions.tweets_by_date_and_tweet_id.insert(tweet_date.clone(), HashMap::new());
+                }
+
+                let date_map: &mut HashMap<u64, u64> = self.id_conversions.tweets_by_date.get_mut(&tweet_date).unwrap();
+                let next_idx = date_map.len() as u64;
+                date_map.insert(next_idx, tw.internal_id);
+
+                let date_map: &mut HashMap<u64, u64> = self.id_conversions.tweets_by_date_and_tweet_id.get_mut(&tweet_date).unwrap();
+                let next_idx = date_map.len() as u64;
+                date_map.insert(tw.internal_id, next_idx);
+
                 self.tweets.insert(tw.id.to_owned(), tw);
             }
         }
+    }
+    pub fn display_id_for_tweet(&self, tweet: &Tweet) -> TweetId {
+        let now = Local::now();
+        let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+        let bare_id = TweetId::Bare(tweet.internal_id);
+        let maybe_dated_id = if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
+            let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+            let today_id = self.id_conversions.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
+            today_id.map(|x| TweetId::Today(*x))
+        } else {
+            None
+        };
+
+        maybe_dated_id.unwrap_or(bare_id)
+    }
+    pub fn display_id_for_tweet_id(&self, twid: &TweetId) -> TweetId {
+        self.id_conversions.to_display_id(twid, self)
     }
     pub fn load_cache(display_info: &mut DisplayInfo) -> TwitterCache {
         if Path::new(TwitterCache::PROFILE_CACHE).is_file() {
@@ -641,54 +768,23 @@ impl TwitterCache {
             /* nothing else to care about now, i think? */
         }
     }
-    pub fn retrieve_tweet(&self, tweet_id: &TweetId, display_info: &mut DisplayInfo) -> Option<&Tweet> {
-        match tweet_id {
-            &TweetId::Bare(ref id) => {
-                let maybe_tweet_id = self.id_conversions.id_to_tweet_id.get(id);
-                match maybe_tweet_id {
-                    Some(id) => self.tweets.get(id),
-                    None => None
-                }
-            },
-            &TweetId::Today(ref id) => {
-                let inner_id = self.id_conversions.id_to_tweet_id.get(id);
-                display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
-                None
-            },
-            &TweetId::Dated(ref date, ref id) => {
-                display_info.status("Retrieving tweets with dated IDs is not yet supported.".to_string());
-                None
-            },
-            &TweetId::Twitter(ref id) => self.tweets.get(id)
-        }
+    pub fn retrieve_tweet(&self, tweet_id: &TweetId) -> Option<&Tweet> {
+        let maybe_tweet_id = self.id_conversions.to_twitter_id(tweet_id.to_owned());
+        maybe_tweet_id.and_then(|id| self.tweets.get(&id))
     }
     pub fn retrieve_user(&self, user_id: &String) -> Option<&User> {
         self.users.get(user_id)
     }
     pub fn fetch_tweet(&mut self, tweet_id: &TweetId, mut queryer: &mut ::Queryer, display_info: &mut DisplayInfo) -> Option<&Tweet> {
-        match tweet_id {
-            &TweetId::Bare(ref id) => {
-                // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id, display_info)
-            }
-            &TweetId::Today(ref id) => {
-                // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id, display_info)
-            },
-            &TweetId::Dated(ref date, ref id) => {
-                // we can do nothing but just try to get it
-                self.retrieve_tweet(tweet_id, display_info)
-            },
-            &TweetId::Twitter(ref id) => {
-                if !self.tweets.contains_key(id) {
-                    match self.look_up_tweet(id, &mut queryer) {
-                        Ok(json) => self.cache_api_tweet(json),
-                        Err(e) => display_info.status(format!("Unable to retrieve tweet {}:\n{}", id, e))
-                    };
-                }
-                self.retrieve_tweet(tweet_id, display_info)
+        if let &TweetId::Twitter(ref id) = tweet_id {
+            if !self.tweets.contains_key(id) {
+                match self.look_up_tweet(id, &mut queryer) {
+                    Ok(json) => self.cache_api_tweet(json),
+                    Err(e) => display_info.status(format!("Unable to retrieve tweet {}:\n{}", id, e))
+                };
             }
         }
+        self.retrieve_tweet(tweet_id)
     }
     pub fn fetch_user(&mut self, user_id: &String, mut queryer: &mut ::Queryer, display_info: &mut DisplayInfo) -> Option<&User> {
         if !self.users.contains_key(user_id) {

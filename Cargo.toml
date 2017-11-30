@@ -26,6 +26,6 @@ hyper-tls = "*"
 "futures" = "*"
 "serde_json" = "*"
 "chan" = "*"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 serde = "*"
 serde_derive = "*"

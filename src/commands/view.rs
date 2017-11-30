@@ -19,7 +19,7 @@ pub static VIEW: Command = Command {
 fn view(line: String, tweeter: &mut tw::TwitterCache, _queryer: &mut Queryer, display_info: &mut DisplayInfo) {
     match TweetId::parse(line) {
         Ok(twid) => {
-            if let Some(twete) = tweeter.retrieve_tweet(&twid, display_info) {
+            if let Some(twete) = tweeter.retrieve_tweet(&twid) {
                 display_info.recv(display::Infos::TweetWithContext(
                     TweetId::Twitter(twete.id.to_owned()),
                     format!("link: https://twitter.com/i/web/status/{}", twete.id)
