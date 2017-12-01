@@ -3,12 +3,13 @@ hm.* ->  thinking emoji
 emoji -> :description:
 :description: -> emoji
 
+tearing on media url
+
 granular thread view (pageup shouldn't skip the whole thread through...)
 
 follow/new follower notifications display the wrong person
 
-up/down scroll
-
+# vetoed for now
 name/handle colored by user id instead of handle
 
 recursively display quoted tweets?
@@ -19,6 +20,12 @@ history
 
 per-account activity info
 
-show scrollback if any
+when scrolled back don't advance forward on new events
 
 quick tweet interaction (goto :1234, f<ret> to fav, rep<ret> to reply, ...)
+
+fix client qt bug
+
+look into line wrapping issue with ansi-aware lengths and overflow for long usernames? might be unicode/not-really-monospace-font issues?
+
+updating information already stored to cache (this might be kind of tricky, maybe time to move to a decent storage format?)

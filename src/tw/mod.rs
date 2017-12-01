@@ -881,6 +881,7 @@ fn handle_twitter_twete(
     tweeter: &mut TwitterCache,
     display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
+    //display_info.recv(display::Infos::Text(vec![format!("{:?}", structure)]));
     let twete_id = structure["id_str"].as_str().unwrap().to_string();
     tweeter.cache_api_tweet(serde_json::Value::Object(structure));
     display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete_id)));
@@ -894,6 +895,7 @@ fn handle_twitter_dm(
     display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     // show DM
+    display_info.recv(display::Infos::Text(vec![format!("{:?}", structure)]));
     display_info.recv(display::Infos::DM(structure["direct_message"]["text"].as_str().unwrap().to_string()));
 }
 
