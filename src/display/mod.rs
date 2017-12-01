@@ -381,18 +381,20 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                     let mut lines: Vec<String> = vec![];
                     let msg_lines = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
+                    lines.push(std::iter::repeat("-").take((width as usize).saturating_sub(2)).collect());
                     lines.extend(msg_lines);
                     if lines.len() == 0 {
                         lines.push("".to_owned());
                     }
                     // TODO: properly probe tweet length lim
-                    lines.push(format!("{}/{}", x.len(), 140));
+                    let counter = format!("{}/{}", x.len(), 280);
+                    lines.push(format!("{}{}", counter, std::iter::repeat("-").take((width as usize).saturating_sub(counter.len() + 2)).collect::<String>()));
                     lines.insert(0, "".to_owned());
                     let mut lines_drawn: u16 = 0;
                     for line in lines.into_iter().rev() {
-                        print!("{}{}  {}{}{}{}",
+                        print!("{}{}  {}",
                             cursor::Goto(1, height - 4 - lines_drawn), clear::CurrentLine,
-                            color::Bg(color::Blue), line, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>(), termion::style::Reset
+                            line //, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>()
                         );
                         lines_drawn += 1;
                     }
@@ -400,8 +402,11 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                     (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
-                    let mut lines = render_twete(&twid, tweeter, display_info, Some(width));
-                    lines.push("  --------  ".to_owned());
+                    let mut lines: Vec<String> = vec![];
+                    lines.push(std::iter::repeat("-").take((width as usize).saturating_sub(2)).collect());
+                    lines.extend(render_twete(&twid, tweeter, display_info, Some(width)));
+                    let reply_delineator = "--------reply";
+                    lines.push(format!("{}{}", reply_delineator, std::iter::repeat("-").take((width as usize).saturating_sub(reply_delineator.len() + 2)).collect::<String>()));
                     let msg_lines = into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
                     if msg_lines.len() == 0 {
@@ -409,13 +414,14 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                     }
                     lines.extend(msg_lines);
                     // TODO: properly probe tweet length lim
-                    lines.push(format!("{}/{}", msg.len(), 140));
+                    let counter = format!("{}/{}", msg.len(), 280);
+                    lines.push(format!("{}{}", counter, std::iter::repeat("-").take((width as usize).saturating_sub(counter.len() + 2)).collect::<String>()));
                     lines.insert(0, "".to_owned());
                     let mut lines_drawn: u16 = 0;
                     for line in lines.into_iter().rev() {
-                        print!("{}{}  {}{}{}{}",
+                        print!("{}{}  {}",
                             cursor::Goto(1, height - 4 - lines_drawn), clear::CurrentLine,
-                            color::Bg(color::Blue), line, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>(), termion::style::Reset
+                            line //, std::iter::repeat(" ").take((width as usize).saturating_sub(line.len() + 2)).collect::<String>()
                         );
                         lines_drawn += 1;
                     }
