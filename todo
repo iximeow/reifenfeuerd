@@ -29,3 +29,9 @@ fix client qt bug
 look into line wrapping issue with ansi-aware lengths and overflow for long usernames? might be unicode/not-really-monospace-font issues?
 
 updating information already stored to cache (this might be kind of tricky, maybe time to move to a decent storage format?)
+
+DMs
+[ ] displaying from/to
+[ ] authoring
+[ ] conversation viewing
+[ ] deleting(?)
