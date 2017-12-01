@@ -35,3 +35,13 @@ DMs
 [ ] authoring
 [ ] conversation viewing
 [ ] deleting(?)
+
+mute
+[ ] tweets
+[ ] conversations
+[ ] people
+  - is this entirely anything with @user? or override by @user @'ing you?
+
+rt_fav/rt_rt
+[ ] do not duplicate notify when you fav or rt a retweet
+
