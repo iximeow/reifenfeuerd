@@ -632,6 +632,14 @@ fn pad_lines(lines: Vec<String>, padding: &str) -> Vec<String> {
     lines.into_iter().map(|x| format!("{}{}", padding, x)).collect()
 }
 
+fn short_display_summary(u: &tw::user::User) -> String {
+    format!("{}{}{} ({}@{}{}{})",
+        color_for(&u.handle), u.name, color::Fg(color::Reset),
+        color_for(&u.handle), u.handle, color::Fg(color::Reset),
+        if u.verified { format!(" {}✔️{}", color::Fg(color::Blue), color::Fg(color::Reset)) } else { "".to_owned() }
+    )
+}
+
 pub fn render_twete(twete_id: &TweetId, tweeter: &tw::TwitterCache,  display_info: &mut DisplayInfo, width: Option<u16>) -> Vec<String> {
     let mut lines = render_twete_no_recurse(twete_id, tweeter, display_info, width);
     match tweeter.retrieve_tweet(twete_id).map(|x| x.clone()) {
@@ -678,7 +686,11 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
             // of the retweeter tweet if it's there
 
             let mut id_string = format!("{}id {}", id_color, tweet_id);
-            let mut author_string = format!("{}{}{} ({}@{}{})", color_for(&tweet_author.handle), tweet_author.name, color::Fg(color::Reset), color_for(&tweet_author.handle), tweet_author.handle, color::Fg(color::Reset));
+            let mut author_string = short_display_summary(&tweet_author);
+
+            if tweet_author.protected {
+                id_string.push_str(&format!(" {}locked{}", termion::style::Underline, termion::style::Reset));
+            }
 
             if let Some(reply_id) = tweet.reply_to_tweet.clone() {
                 let reply_tweet_id = tweeter.display_id_for_tweet_id(&TweetId::Twitter(reply_id.to_owned()));
@@ -690,7 +702,7 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
                 let rt_id = tweeter.display_id_for_tweet(&rt);
                 let rt_author = tweeter.retrieve_user(&rt.author_id).unwrap().clone();
                 id_string.push_str(&format!(" (rt id {})", rt_id));
-                author_string.push_str(&format!(" via {}{}{} ({}@{}{}) RT", color_for(&rt_author.handle), rt_author.name, color::Fg(color::Reset), color_for(&rt_author.handle), rt_author.handle, color::Fg(color::Reset)));
+                author_string.push_str(&format!(" via {} RT", short_display_summary(&rt_author)));
             }
 
             id_string.push_str(&format!("{}", color::Fg(color::Reset)));
