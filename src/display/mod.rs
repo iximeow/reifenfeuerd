@@ -345,7 +345,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             // draw input prompt
             let mut i = 0;
             let log_size = 4;
-            let last_tail_log = display_info.log.len().saturating_sub(display_info.infos_seek as usize);
+            let last_tail_log = display_info.log.len().saturating_sub(display_info.log_seek as usize);
             let first_tail_log = last_tail_log.saturating_sub(log_size);
             {
                 let to_show = display_info.log[first_tail_log..last_tail_log].iter().rev();
@@ -361,6 +361,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             // draw status lines
             // draw tweets
             let last_tail_twevent = display_info.infos.len().saturating_sub(display_info.infos_seek as usize);
+            let twevent_offset = display_info.infos.len() - last_tail_twevent;
             let first_tail_twevent = last_tail_twevent.saturating_sub(height as usize - 4);
             let last_few_twevent: Vec<Infos> = display_info.infos[first_tail_twevent..last_tail_twevent].iter().map(|x| x.clone()).rev().collect::<Vec<Infos>>();
 
@@ -372,7 +373,12 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             let (cursor_x, cursor_y) = match display_info.mode.clone() {
                 None => {
                     let handle = tweeter.current_profile().map(|profile| profile.user.handle.to_owned()).unwrap_or("_default_".to_owned());
-                    print!("{}{}", cursor::Goto(1, height - 6), clear::CurrentLine);
+                    print!("{}{}{}",
+                           cursor::Goto(1, height - 6), clear::CurrentLine,
+                           if twevent_offset != 0 {
+                               format!("{} more below", twevent_offset)
+                           } else { "".to_owned() }
+                    );
                     print!("{}{}@{}>{}", cursor::Goto(1, height - 5), clear::CurrentLine, handle, display_info.input_buf.clone().into_iter().collect::<String>());
                     print!("{}{}", cursor::Goto(1, height - 4), clear::CurrentLine);
                     ((1 + handle.len() + 2 + display_info.input_buf.len()) as u16, height as u16 - 5)

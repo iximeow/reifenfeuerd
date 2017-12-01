@@ -334,14 +334,17 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
                 }
             }
         },
-        Event::Key(Key::End) => {
-            display_info.infos_seek = 0;
-        }
         Event::Key(Key::PageUp) => {
             display_info.infos_seek = display_info.infos_seek.saturating_add(1);
         }
         Event::Key(Key::PageDown) => {
             display_info.infos_seek = display_info.infos_seek.saturating_sub(1);
+        }
+        Event::Key(Key::Home) => {
+            display_info.log_seek = display_info.log_seek.saturating_add(1);
+        }
+        Event::Key(Key::End) => {
+            display_info.log_seek = display_info.log_seek.saturating_sub(1);
         }
         Event::Key(Key::Esc) => {
             display_info.mode = None;
