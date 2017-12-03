@@ -92,9 +92,6 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                      *
                      *  fallback to asking user to name the profile, i guess?
                      */
-                    if tweeter.curr_profile.is_none() {
-                        tweeter.curr_profile = Some("default".to_owned());
-                    }
                     let user_credential = tw::Credential {
                         key: as_map["oauth_token"].to_owned(),
                         secret: as_map["oauth_token_secret"].to_owned()
@@ -103,7 +100,29 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                     match queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &tweeter.app_key, &user_credential) {
                         Ok(settings) => {
                             let user_handle = settings["screen_name"].as_str().unwrap().to_owned();
-                            tweeter.add_profile(tw::TwitterProfile::new(user_credential, tw::user::User::default()), Some(user_handle.clone()), display_info);
+                            /*
+                             * kinda gotta hand-crank this to set up the user profile...
+                             * largely the same logic as `look_up_user`.
+                             */
+                            let looked_up_user = queryer.do_api_get(
+                                &format!("{}?screen_name={}", ::USER_LOOKUP_URL, user_handle),
+                                &tweeter.app_key,
+                                &user_credential
+                            ).and_then(|json| tw::user::User::from_json(json));
+
+                            let profile_user = match looked_up_user {
+                                Ok(user) => user,
+                                Err(e) => {
+                                    display_info.status("Couldn't look up you up - handle and display name are not set. You'll have to manually adjust cache/profile.json.".to_owned());
+                                    display_info.status(format!("Lookup error: {}", e));
+                                    tw::user::User::default()
+                                }
+                            };
+                            display_info.status(format!("wtf at auth curr_profile is {:?}", tweeter.curr_profile));
+                            if tweeter.curr_profile.is_none() {
+                                tweeter.curr_profile = Some(user_handle.to_owned());
+                            }
+                            tweeter.add_profile(tw::TwitterProfile::new(user_credential, profile_user), Some(user_handle.clone()), display_info);
                             tweeter.WIP_auth = None;
                             tweeter.state = tw::AppState::Reconnect(user_handle);
                             display_info.status("Looks like you authed! Connecting...".to_owned());

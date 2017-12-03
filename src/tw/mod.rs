@@ -1042,6 +1042,10 @@ fn handle_twitter_welcome(
 
     match followers_changes {
         Ok((my_name, new_following, lost_following, (new_followers, lost_followers))) => {
+            /*
+             * This *will* spam you on login, and isn't very useful.
+             * TODO: present this sanely.
+             *
             for user in new_following {
                 display_info.status(format!("New following! {}", user));
             }
@@ -1054,6 +1058,7 @@ fn handle_twitter_welcome(
             for user in lost_followers {
                 display_info.status(format!("{} isn't following anymore", user));
             }
+             */
         },
         Err(e) => {
             display_info.status(e);
