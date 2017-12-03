@@ -752,7 +752,7 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
             let mut author_string = short_display_summary(&tweet_author);
 
             if tweet_author.protected {
-                id_string.push_str(&format!(" {}locked{}", termion::style::Underline, termion::style::Reset));
+                id_string.push_str(&format!(" {}locked{}", termion::style::Underline, termion::style::NoUnderline));
             }
 
             if let Some(reply_id) = tweet.reply_to_tweet.clone() {
