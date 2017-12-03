@@ -91,6 +91,36 @@ pub struct Credential {
 }
 
 #[derive(Serialize, Deserialize)]
+enum TweetMuteType {
+    Notifications,
+    NotificationsAndReplies,
+    Conversation
+}
+
+#[derive(Serialize, Deserialize)]
+enum UserMuteType {
+    Mentions,
+    Everything
+}
+
+#[derive(Serialize, Deserialize)]
+struct MuteInfo {
+    pub users: HashMap<String, UserMuteType>, // user id strings : mute info
+    pub tweets: HashMap<String, TweetMuteType>, // twitter tweet id : mute info
+    pub words: HashSet<String>
+}
+
+impl MuteInfo {
+    fn new() -> MuteInfo {
+        MuteInfo {
+            users: HashMap::new(),
+            tweets: HashMap::new(),
+            words: HashSet::new()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct TwitterCache {
     #[serde(skip)]
     pub users: HashMap<String, User>,
@@ -103,6 +133,7 @@ pub struct TwitterCache {
     // alts and such will be others here.
     pub curr_profile: Option<String>,
     pub profiles: HashMap<String, TwitterProfile>,
+    mutes: MuteInfo,
     threads: HashMap<String, u64>, // thread : latest_tweet_in_thread
     #[serde(skip)]
     pub needs_save: bool,
@@ -487,7 +518,8 @@ impl TwitterCache {
             threads: HashMap::new(),
             id_conversions: IdConversions::default(),
             state: AppState::View,
-            connection_map: HashMap::new()
+            connection_map: HashMap::new(),
+            mutes: MuteInfo::new()
         }
     }
 
@@ -516,6 +548,97 @@ impl TwitterCache {
         } else {
             display_info.status(format!("I don't know what {} means", command).to_string());
         }
+    }
+
+    fn tweet_muted(&self, tw: &Tweet) -> bool {
+        match self.mutes.tweets.get(&tw.id) {
+            Some(Conversation) => {
+                // you may have muted a tweet directly?
+                return true;
+            }
+            _ => {}
+        };
+        match self.mutes.users.get(&tw.author_id) {
+            Some(Mentions) => { return true; },
+            Some(Everything) => { return true; }
+            None => {}
+        };
+
+        // Check reply_id for mutes independently because the mute
+        // may be on a tweet we don't have cached
+        if let Some(ref reply_id) = tw.reply_to_tweet {
+            match self.mutes.tweets.get(reply_id) {
+                Some(Conversation) => {
+                    return true;
+                }
+                // Other mute levels are to mute notifications, like rt/fav, not conversation
+                //
+                // What about quote_tweet notifications?
+                _ => {}
+            }
+
+            if let Some(reply) = self.retrieve_tweet(&TweetId::Twitter(reply_id.to_owned())) {
+                match self.mutes.users.get(&reply.author_id) {
+                    Some(Everything) => {
+                        return true;
+                    },
+                    _ => {}
+                }
+            }
+        }
+
+        // If we have the author, see if the author is muted
+
+        return false;
+    }
+
+    fn event_muted(&self, ev: &events::Event) -> bool {
+        match ev {
+            &events::Event::Deleted { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::RT_RT { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::Fav_RT { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::Fav { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::Unfav { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::Quoted { ref user_id, ref twete_id } => {
+                if self.mutes.users.contains_key(user_id) || self.mutes.tweets.contains_key(twete_id) {
+                    return true;
+                }
+            },
+            &events::Event::Followed { ref user_id } => {
+                if self.mutes.users.contains_key(user_id) {
+                    return true;
+                }
+            },
+            &events::Event::Unfollowed { ref user_id } => {
+                if self.mutes.users.contains_key(user_id) {
+                    return true;
+                }
+            }
+        }
+
+        // TODO: if there's a referenced tweet, see if the tweet is part of a conversation mute
+
+        return false;
     }
 
     fn new_without_caching() -> TwitterCache {
