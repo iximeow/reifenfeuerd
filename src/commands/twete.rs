@@ -54,7 +54,7 @@ fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
     // if it's just "t", enter compose mode.
     let text = line.trim().to_owned();
     if text.len() == 0 {
-        display_info.mode = Some(::display::DisplayMode::Compose(text));
+        display_info.set_mode(Some(::display::DisplayMode::Compose(text)));
     } else {
         send_twete(text, tweeter, queryer, display_info);
     }
@@ -178,7 +178,7 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                 if reply.len() > 0 {
                     send_reply(full_reply, twid, tweeter, queryer, user_profile.creds, display_info);
                 } else {
-                    display_info.mode = Some(::display::DisplayMode::Reply(twid, full_reply));
+                    display_info.set_mode(Some(::display::DisplayMode::Reply(twid, full_reply)));
                 }
             } else {
                 display_info.status(format!("No tweet for id: {:?}", twid));
