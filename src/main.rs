@@ -260,60 +260,68 @@ fn main() {
 fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, queryer: &mut ::Queryer, display_info: &mut display::DisplayInfo) {
     match event {
         Event::Key(Key::Backspace) => {
-            match display_info.mode.clone() {
-                None => { display_info.input_buf.pop(); },
+            let new_mode = match display_info.get_mode().clone() {
+                None => { display_info.input_buf_pop(); None },
                 Some(display::DisplayMode::Compose(msg)) => {
                     let mut newstr = msg.clone();
                     newstr.pop();
-                    display_info.mode = Some(display::DisplayMode::Compose(newstr));
+                    Some(display::DisplayMode::Compose(newstr))
                 },
                 Some(display::DisplayMode::Reply(twid, msg)) => {
                     let mut newstr = msg.clone();
                     newstr.pop();
-                    display_info.mode = Some(display::DisplayMode::Reply(twid, newstr));
+                    Some(display::DisplayMode::Reply(twid, newstr))
                 }
-            }
+            };
+            display_info.set_mode(new_mode);
         }
         // would Shift('\n') but.. that doesn't exist.
         // would Ctrl('\n') but.. that doesn't work.
         Event::Key(Key::Ctrl('u')) => {
-             match display_info.mode.clone() {
-                None => display_info.input_buf = vec![],
+            let new_mode = match display_info.get_mode().clone() {
+                None => { display_info.input_buf_drain(); None},
                 Some(display::DisplayMode::Compose(msg)) => {
-                    // TODO: clear only one line?
-                    display_info.mode = Some(display::DisplayMode::Compose("".to_owned()));
+                    Some(display::DisplayMode::Compose("".to_owned()))
                 }
                 Some(display::DisplayMode::Reply(twid, msg)) => {
-                    display_info.mode = Some(display::DisplayMode::Reply(twid, "".to_owned()));
+                    Some(display::DisplayMode::Reply(twid, "".to_owned()))
                 }
-            }
+            };
+            display_info.set_mode(new_mode);
         }
         Event::Key(Key::Ctrl('n')) => {
-            match display_info.mode.clone() {
+            let new_mode = match display_info.get_mode().clone() {
                 Some(display::DisplayMode::Compose(msg)) => {
-                    display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, "\n")));
+                    Some(display::DisplayMode::Compose(format!("{}{}", msg, "\n")))
                 }
-                _ => {}
-            }
+                mode @ _ => mode
+            };
+            display_info.set_mode(new_mode);
         }
-        // TODO: ctrl+u, ctrl+w
+        // TODO: ctrl+w
         Event::Key(Key::Char(x)) => {
-            match display_info.mode.clone() {
+            // Unlike other cases where we care about DisplayMode here,
+            // we can't just set the display mode in this function..
+            //
+            // commands can change display mode, but might not, so just
+            // let them do their thing and only explicitly set display
+            // mode when we know we ought to
+            match display_info.get_mode().clone() {
                 None => {
                     if x == '\n' {
-                        let line = display_info.input_buf.drain(..).collect::<String>();
+                        let line = display_info.input_buf_drain();
                         tweeter.handle_user_input(line.into_bytes(), queryer, display_info);
                     } else {
-                        display_info.input_buf.push(x);
+                        display_info.input_buf_push(x);
                     }
                 }
                 Some(display::DisplayMode::Compose(msg)) => {
                     if x == '\n' {
                         // TODO: move this somewhere better.
                         ::commands::twete::send_twete(msg, tweeter, queryer, display_info);
-                        display_info.mode = None;
+                        display_info.set_mode(None)
                     } else {
-                        display_info.mode = Some(display::DisplayMode::Compose(format!("{}{}", msg, x)));
+                        display_info.set_mode(Some(display::DisplayMode::Compose(format!("{}{}", msg, x))))
                     }
                 }
                 Some(display::DisplayMode::Reply(twid, msg)) => {
@@ -327,27 +335,27 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
                                 display_info.status("Cannot reply when not logged in".to_owned());
                             }
                         }
-                        display_info.mode = None;
+                        display_info.set_mode(None)
                     } else {
-                        display_info.mode = Some(display::DisplayMode::Reply(twid, format!("{}{}", msg, x)));
+                        display_info.set_mode(Some(display::DisplayMode::Reply(twid, format!("{}{}", msg, x))))
                     }
                 }
-            }
+            };
         },
         Event::Key(Key::PageUp) => {
-            display_info.infos_seek = display_info.infos_seek.saturating_add(1);
+            display_info.adjust_infos_seek(Some(1));
         }
         Event::Key(Key::PageDown) => {
-            display_info.infos_seek = display_info.infos_seek.saturating_sub(1);
+            display_info.adjust_infos_seek(Some(-1));
         }
         Event::Key(Key::Home) => {
-            display_info.log_seek = display_info.log_seek.saturating_add(1);
+            display_info.adjust_log_seek(Some(1));
         }
         Event::Key(Key::End) => {
-            display_info.log_seek = display_info.log_seek.saturating_sub(1);
+            display_info.adjust_log_seek(Some(-1));
         }
         Event::Key(Key::Esc) => {
-            display_info.mode = None;
+            display_info.set_mode(None);
         }
         Event::Key(_) => { }
         Event::Mouse(_) => { }
@@ -356,9 +364,7 @@ fn handle_input(event: termion::event::Event, tweeter: &mut tw::TwitterCache, qu
 }
 
 fn handle_twitter_line(conn_id: u8, line: Vec<u8>, mut tweeter: &mut tw::TwitterCache, mut queryer: &mut ::Queryer, display_info: &mut display::DisplayInfo) {
-    let jsonstr = std::str::from_utf8(&line).unwrap().trim();
-    /* TODO: replace from_str with from_slice? */
-    match serde_json::from_str(&jsonstr) {
+    match serde_json::from_slice(&line) {
         Ok(json) => {
             tw::handle_message(conn_id, json, &mut tweeter, display_info, &mut queryer);
             if tweeter.needs_save && tweeter.caching_permitted {
@@ -366,7 +372,7 @@ fn handle_twitter_line(conn_id: u8, line: Vec<u8>, mut tweeter: &mut tw::Twitter
             }
         },
         Err(e) =>
-            display_info.status(format!("Error reading twitter line: {}", jsonstr))
+            display_info.status(format!("Error reading twitter line: {:?}", std::str::from_utf8(&line)))
     }
 }
 
@@ -445,7 +451,7 @@ fn do_ui(
                 for command in commands::COMMANDS {
                     help_lines.push(format!("{}{: <width$} {}", command.keyword, command.param_str, command.help_str, width=(35 - command.keyword.len())));
                 }
-                display_info.infos.push(display::Infos::Text(help_lines));
+                display_info.recv(display::Infos::Text(help_lines));
                 display::paint(tweeter, display_info).unwrap();
                 tweeter.state = tw::AppState::View;
             }

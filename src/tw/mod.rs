@@ -252,7 +252,6 @@ mod tests {
 
 impl TweetId {
     pub fn parse(id_str: String) -> Result<TweetId, String> {
-        // TODO: figure out how to return a Result<TweetId, <.. the result types ..>>
         if id_str.starts_with("twitter:") {
             Ok(TweetId::Twitter(id_str.chars().skip("twitter:".len()).collect()))
         } else if id_str.starts_with(":") {
@@ -429,49 +428,37 @@ impl TwitterProfile {
     }
     /*
      * Returns: "did this change?"
-     *
-     * but currently pessimistically always returns true right now
-     * TODO: check if this should return false! (that's probably a cache bug though.)
      */
     pub fn add_following(&mut self, user_id: &String) -> bool {
-        self.following.insert(user_id.to_owned());
-        self.following_history.insert(user_id.to_owned(), ("following".to_string(), Utc::now().timestamp()));
-        true
+        let mut changed = self.following.insert(user_id.to_owned());
+        changed |= self.following_history.insert(user_id.to_owned(), ("following".to_string(), Utc::now().timestamp())).is_none();
+        changed
     }
     /*
      * Returns: "did this change?"
-     *
-     * but currently pessimistically always returns true right now
-     * TODO: check if this should return false! (that's probably a cache bug though.)
      */
     pub fn remove_following(&mut self, user_id: &String) -> bool {
-        self.following.remove(user_id);
-        self.following_history.insert(user_id.to_owned(), ("unfollowing".to_string(), Utc::now().timestamp()));
-        true
+        let mut changed = self.following.remove(user_id);
+        changed |= self.following_history.insert(user_id.to_owned(), ("unfollowing".to_string(), Utc::now().timestamp())).is_some();
+        changed
     }
     /*
      * Returns: "did this change?"
-     *
-     * but currently pessimistically always returns true right now
-     * TODO: check if this should return false! (that's probably a cache bug though.)
      */
     pub fn add_follower(&mut self, user_id: &String) -> bool {
-        self.followers.insert(user_id.to_owned());
-        self.lost_followers.remove(user_id);
-        self.follower_history.insert(user_id.to_owned(), ("follow".to_string(), Utc::now().timestamp()));
-        true
+        let mut changed = self.followers.insert(user_id.to_owned());
+        changed |= self.lost_followers.remove(user_id);
+        changed |= self.follower_history.insert(user_id.to_owned(), ("follow".to_string(), Utc::now().timestamp())).is_none();
+        changed
     }
     /*
      * Returns: "did this change?"
-     *
-     * but currently pessimistically always returns true right now
-     * TODO: check if this should return false! (that's probably a cache bug though.)
      */
     pub fn remove_follower(&mut self, user_id: &String) -> bool {
-        self.followers.remove(user_id);
-        self.lost_followers.insert(user_id.to_owned());
-        self.follower_history.insert(user_id.to_owned(), ("unfollow".to_string(), Utc::now().timestamp()));
-        true
+        let mut changed = self.followers.remove(user_id);
+        changed |= self.lost_followers.insert(user_id.to_owned());
+        changed |= self.follower_history.insert(user_id.to_owned(), ("unfollow".to_string(), Utc::now().timestamp())).is_some();
+        changed
     }
 }
 
@@ -851,7 +838,9 @@ fn handle_twitter_event(
     tweeter.cache_api_event(conn_id, structure.clone(), queryer, display_info);
     match events::Event::from_json(structure) {
         Ok(event) => {
-            display_info.recv(display::Infos::Event(event));
+            if !tweeter.event_muted(&event) {
+                display_info.recv(display::Infos::Event(event));
+            }
         },
         Err(e) => {
             display_info.status(format!("Unknown twitter json: {:?}", e));
@@ -882,10 +871,15 @@ fn handle_twitter_twete(
     display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     //display_info.recv(display::Infos::Text(vec![format!("{:?}", structure)]));
-    let twete_id = structure["id_str"].as_str().unwrap().to_string();
+    let twete_id = TweetId::Twitter(
+        structure["id_str"].as_str().unwrap().to_string()
+    );
     tweeter.cache_api_tweet(serde_json::Value::Object(structure));
-    display_info.recv(display::Infos::Tweet(TweetId::Twitter(twete_id)));
-    // display::render_twete(&twete_id, tweeter);
+    if let Some(twete) = tweeter.retrieve_tweet(&twete_id) {
+        if !tweeter.tweet_muted(twete) {
+            display_info.recv(display::Infos::Tweet(twete_id));
+        }
+    }
 }
 
 fn handle_twitter_dm(

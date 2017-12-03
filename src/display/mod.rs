@@ -35,14 +35,15 @@ pub enum Infos {
 const COMPOSE_HEIGHT: u16 = 5;
 
 pub struct DisplayInfo {
-    pub log_height: u16,
-    pub prompt_height: u16,
-    pub mode: Option<DisplayMode>,
-    pub log_seek: u32,
-    pub infos_seek: u32,
-    pub log: Vec<String>,
-    pub infos: Vec<Infos>,
-    pub input_buf: Vec<char>
+    log_height: u16,
+    prompt_height: u16,
+    mode: Option<DisplayMode>,
+    log_seek: u32,
+    infos_seek: u32,
+    log: Vec<String>,
+    infos: Vec<Infos>,
+    input_buf: Vec<char>,
+    dirty: bool
 }
 
 impl Default for DisplayInfo {
@@ -55,18 +56,91 @@ impl Default for DisplayInfo {
             infos_seek: 0,
             log: Vec::new(),
             infos: Vec::new(),
-            input_buf: Vec::new()
+            input_buf: Vec::new(),
+            dirty: false
         }
     }
 }
 
 impl DisplayInfo {
+    pub fn set_mode(&mut self, new_mode: Option<DisplayMode>) {
+        self.mode = new_mode;
+        self.dirty = true;
+    }
+
+    pub fn get_mode(&self) -> &Option<DisplayMode> {
+        &self.mode
+    }
+
+    pub fn adjust_infos_seek(&mut self, seek_adjust: Option<i32>) {
+        self.infos_seek = match seek_adjust {
+            Some(adjust) => {
+                /*
+                 * So this might be weird to read.
+                 *
+                 * I don't know how to add an i32 in a saturating manner to a u32.
+                 *
+                 * That's what this does:
+                 *   if adjust is negative, negate to positive and saturating_sub it
+                 *   if adjust is positive, we can just saturating_add it
+                 */
+                if adjust < 0 {
+                    self.infos_seek.saturating_sub(-adjust as u32)
+                } else {
+                    self.infos_seek.saturating_add(adjust as u32)
+                }
+            },
+            None => 0
+        };
+        self.dirty = true;
+    }
+
+    pub fn adjust_log_seek(&mut self, seek_adjust: Option<i32>) {
+        self.log_seek = match seek_adjust {
+            Some(adjust) => {
+                /*
+                 * So this might be weird to read.
+                 *
+                 * I don't know how to add an i32 in a saturating manner to a u32.
+                 *
+                 * That's what this does:
+                 *   if adjust is negative, negate to positive and saturating_sub it
+                 *   if adjust is positive, we can just saturating_add it
+                 */
+                if adjust < 0 {
+                    self.log_seek.saturating_sub(-adjust as u32)
+                } else {
+                    self.log_seek.saturating_add(adjust as u32)
+                }
+            },
+            None => 0
+        };
+        self.dirty = true;
+    }
+
     pub fn status(&mut self, stat: String) {
         self.log.push(stat);
+        self.dirty = true;
     }
 
     pub fn recv(&mut self, info: Infos) {
         self.infos.push(info);
+        self.dirty = true;
+    }
+
+    pub fn input_buf_push(&mut self, c: char) {
+        self.input_buf.push(c);
+        self.dirty = true;
+    }
+
+    pub fn input_buf_pop(&mut self) {
+        self.input_buf.pop();
+        self.dirty = true;
+    }
+
+    pub fn input_buf_drain(&mut self) -> String {
+        self.dirty = true;
+        self.input_buf.drain(..).collect()
     }
 
     pub fn ui_height(&self) -> u16 {
@@ -79,20 +153,6 @@ impl DisplayInfo {
  */
 fn into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
     ansi_aware_into_display_lines(x, width)
-    /*
-    let split_on_newline: Vec<String> = x.into_iter()
-        .flat_map(|x| x.split("\n")
-            .map(|x| x.to_owned())
-            .collect::<Vec<String>>()
-        ).collect();
-    let wrapped: Vec<String> = split_on_newline.iter()
-        .map(|x| x.chars().collect::<Vec<char>>())
-        .flat_map(|x| x.chunks(width as usize)
-            .map(|x| x.into_iter().collect::<String>())
-            .collect::<Vec<String>>())
-        .collect();
-    wrapped
-     */
 }
 
 #[derive(Clone)]
@@ -211,7 +271,6 @@ fn ansi_aware_into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
                             "".to_owned()
                         },
                         Some(AnsiInfo::Esc) => {
-                            //  TODO: flush
                             ansi_code = None;
                             format!("{}{}", AnsiInfo::Esc, c)
                         },
@@ -342,6 +401,9 @@ fn ansi_aware_into_display_lines(x: Vec<String>, width: u16) -> Vec<String> {
 pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Result<(), std::io::Error> {
     match termion::terminal_size() {
         Ok((width, height)) => {
+            if !display_info.dirty {
+                return Ok(());
+            }
             // draw input prompt
             let mut i = 0;
             let log_size = 4;
@@ -405,7 +467,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                         lines_drawn += 1;
                     }
                     h += lines_drawn - 3;
-                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
+                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: this panics on underflow
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
                     let mut lines: Vec<String> = vec![];
@@ -432,7 +494,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                         lines_drawn += 1;
                     }
                     h += lines_drawn - 3;
-                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: panic on underflow
+                    (cursor_idx as u16 + 3, height as u16 - 5) // TODO: this panics on underflow
                 }
             };
 
@@ -522,6 +584,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             println!("Can't get term dimensions: {}", e);
         }
     }
+    display_info.dirty = false;
     Ok(())
 }
 
@@ -778,6 +841,14 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
                             }
                         }
                     }
+                    /*
+                    for elem in tweet.media.iter() {
+                        if line.contains(elem.0) {
+                            result = result.replace(elem.0, &format!("[{}]", urls_to_include.len()));
+                            urls_to_include.push(elem.0);
+                        }
+                    }
+                    */
                     result
                 })
                 .collect();
@@ -792,8 +863,6 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
                         if expanded.len() < (width - 9) as usize { // "[XX]: " is 6 + some padding space?
                             text.push(format!("[{}]: {}", i, expanded));
                         } else {
-                            // TODO: try to just show domain, THEN fall back to just a link if the
-                            // domain is too long
                             text.push(format!("[{}]: {}", i, short_url));
                         }
                     }

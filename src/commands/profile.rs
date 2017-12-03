@@ -1,8 +1,5 @@
 use display::DisplayInfo;
 use tw;
-use std;
-use std::collections::HashMap;
-use hyper;
 use ::Queryer;
 
 use commands::Command;

@@ -45,3 +45,4 @@ mute
 rt_fav/rt_rt
 [ ] do not duplicate notify when you fav or rt a retweet
 
+handle ctrl+c gracefully (save cache and don't trash terminal state lol)
