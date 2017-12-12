@@ -230,8 +230,48 @@ mod tests {
     }
 
     #[test]
-    fn test_tweet_retrieval() {
+    fn test_display_id() {
+        /*
+         * ... I think this test only works if Local is -0800 or further from UTC.
+         * I'm not even sure how to make any of this work in a TZ-invariant way.
+         */
+        // THIS NOW ONLY WORKS FOR DAYS OTHER THAN THE LAST OF A MONTH. FML
         let today = Local::now();
+        let pst_1630_but_utc: DateTime<Utc> = DateTime::parse_from_rfc3339(
+            &format!("{:04}-{:02}-{:02}T00:30:00Z", today.year(), today.month(), today.day() + 1)).unwrap().with_timezone(&Utc);
+        let local_pst_1630: DateTime<Local> = DateTime::parse_from_rfc3339(
+            &format!("{:04}-{:02}-{:02}T16:30:00-08:00", today.year(), today.month(), today.day())).unwrap().with_timezone(&Local);
+        let tweet = Tweet {
+            id: "manual_tweet_1".to_owned(),
+            author_id: "you, dummy".to_owned(),
+            text: "test tweet please ignore".to_owned(),
+            created_at: "1234 not real".to_owned(),
+            recieved_at: pst_1630_but_utc,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: None,
+            reply_to_tweet: None,
+            internal_id: 0
+        };
+
+        let mut tweeter = TwitterCache::new();
+
+        tweeter.number_and_insert_tweet(tweet.clone());
+
+        let retrieved = tweeter.retrieve_tweet(&TweetId::Bare(1));
+        assert_eq!(retrieved.is_some(), true);
+
+        let retrieved = tweeter.retrieve_tweet(&TweetId::Dated(format!("{:04}{:02}{:02}", today.year(), today.month(), today.day()), 0));
+        assert_eq!(retrieved.is_some(), true);
+
+        let display_id = tweeter.display_id_for_tweet(&retrieved.unwrap());
+
+        assert_eq!(display_id, TweetId::Today(0));
+    }
+
+    #[test]
+    fn test_tweet_retrieval() {
+        let today = Utc::now();
         let yesterday = today - chrono::Duration::days(1);
         let tweets = vec![
             Tweet {
@@ -274,8 +314,12 @@ mod tests {
             tweeter.retrieve_tweet(&TweetId::Today(0)).map(|x| x.id.to_owned()),
             Some(tweets[1].clone()).map(|x| x.id)
         );
+
+        let local_yesterday = yesterday.with_timezone(&Local);
+        let date = format!("{:04}{:02}{:02}", local_yesterday.year(), local_yesterday.month(), local_yesterday.day());
+
         assert_eq!(
-            tweeter.retrieve_tweet(&TweetId::Dated(format!("{:04}{:02}{:02}", yesterday.year(), yesterday.month(), yesterday.day()), 0)).map(|x| x.id.to_owned()),
+            tweeter.retrieve_tweet(&TweetId::Dated(date, 0)).map(|x| x.id.to_owned()),
             Some(tweets[0].clone()).map(|x| x.id)
         );
     }
