@@ -99,6 +99,7 @@ enum TweetMuteType {
 
 #[derive(Serialize, Deserialize)]
 enum UserMuteType {
+    Retweets,
     Mentions,
     Everything
 }
@@ -227,6 +228,114 @@ mod tests {
         assert_eq!(TweetId::parse("a:13234".to_string()), Err("Unrecognized id string: a:13234".to_owned()));
         assert_eq!(TweetId::parse(":a34".to_string()), Err("invalid digit found in string".to_owned()));
         assert_eq!(TweetId::parse("asdf:34".to_string()), Err("Unrecognized id string: asdf:34".to_owned()));
+    }
+
+    #[test]
+    fn test_mute_behavior() {
+        let today = Utc::now();
+        let rt_muted_user = "1";
+        let everything_muted_user = "2";
+        let you = "3";
+        let rando = "4";
+
+        let you_tweet = Tweet {
+            id: "yours".to_owned(),
+            author_id: you.to_owned(),
+            text: "you said something".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: None,
+            reply_to_tweet: None,
+            internal_id: 0
+        };
+
+        let rt_muted_user_reply = Tweet {
+            id: "rt_muted_user_reply".to_owned(),
+            author_id: rt_muted_user.to_owned(),
+            text: "i said something in reply".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: None,
+            reply_to_tweet: Some("yours".to_owned()),
+            internal_id: 0
+        };
+
+        let everything_muted_user_reply = Tweet {
+            id: "everything_muted_user_reply".to_owned(),
+            author_id: everything_muted_user.to_owned(),
+            text: "i also said something in reply".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: None,
+            reply_to_tweet: Some("yours".to_owned()),
+            internal_id: 0
+        };
+
+        let rando_reply = Tweet {
+            id: "rando reply".to_owned(),
+            author_id: rando.to_owned(),
+            text: "some random reply".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: None,
+            reply_to_tweet: Some("yours".to_owned()),
+            internal_id: 0
+        };
+
+        let rt_of_rando_reply = Tweet {
+            id: "rt_of_rando_reply".to_owned(),
+            author_id: rt_muted_user.to_owned(),
+            text: "rando reply text".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: Some(rando_reply.id.to_owned()),
+            reply_to_tweet: Some("yours".to_owned()),
+            internal_id: 0
+        };
+
+        let muted_rt_of_you = Tweet {
+            id: "rt_of_yours".to_owned(),
+            author_id: rt_muted_user.to_owned(),
+            text: "you said something".to_owned(),
+            created_at: "todayish".to_owned(),
+            recieved_at: today,
+            urls: HashMap::new(),
+            quoted_tweet_id: None,
+            rt_tweet: Some("yours".to_owned()),
+            reply_to_tweet: None,
+            internal_id: 0
+        };
+
+        let tweets = vec![
+            &you_tweet, &rt_muted_user_reply, &everything_muted_user_reply, &rando_reply,
+            &rt_of_rando_reply, &muted_rt_of_you,
+        ];
+
+        let mut tweeter = TwitterCache::new();
+
+        for tweet in tweets {
+            tweeter.number_and_insert_tweet(tweet.to_owned());
+        }
+
+        tweeter.mute_user(rt_muted_user.to_owned(), UserMuteType::Retweets);
+        tweeter.mute_user(everything_muted_user.to_owned(), UserMuteType::Everything);
+
+        assert_eq!(tweeter.tweet_muted(&you_tweet), false);
+        assert_eq!(tweeter.tweet_muted(&rt_muted_user_reply), true);
+        assert_eq!(tweeter.tweet_muted(&everything_muted_user_reply), true);
+        assert_eq!(tweeter.tweet_muted(&rando_reply), false);
+        assert_eq!(tweeter.tweet_muted(&rt_of_rando_reply), true);
+        assert_eq!(tweeter.tweet_muted(&muted_rt_of_you), true);
     }
 
     #[test]
@@ -594,6 +703,22 @@ impl TwitterCache {
         }
     }
 
+    fn mute_tweet(&mut self, twid: String, mute_setting: TweetMuteType) {
+        self.mutes.tweets.insert(twid, mute_setting);
+    }
+
+    fn mute_user(&mut self, userid: String, mute_setting: UserMuteType) {
+        self.mutes.users.insert(userid, mute_setting);
+    }
+
+    fn unmute_tweet(&mut self, twid: String) {
+        self.mutes.tweets.remove(&twid);
+    }
+
+    fn unmute_user(&mut self, userid: String) {
+        self.mutes.users.remove(&userid);
+    }
+
     fn tweet_muted(&self, tw: &Tweet) -> bool {
         match self.mutes.tweets.get(&tw.id) {
             Some(Conversation) => {
@@ -604,9 +729,26 @@ impl TwitterCache {
         };
         match self.mutes.users.get(&tw.author_id) {
             Some(Mentions) => { return true; },
-            Some(Everything) => { return true; }
+            Some(Everything) => { return true; },
+            Some(Retweets) => {
+                // if the author is muted for retweets, check if this is a retweet
+                if tw.rt_tweet.is_some() {
+                    return true;
+                }
+            }
             None => {}
         };
+
+        if let Some(ref rt_id) = tw.rt_tweet {
+            if let Some(rt) = self.retrieve_tweet(&TweetId::Twitter(rt_id.to_owned())) {
+                match self.mutes.users.get(&rt.author_id) {
+                    Some(Everything) => { return true; },
+                    Some(Retweet) => { /* Retweets don't show up as retweets of retweets, ever */ },
+                    Some(Mentions) => { /* what does this entail? would the rewteet have to mention you? */ },
+                    None => {}
+                }
+            }
+        }
 
         // Check reply_id for mutes independently because the mute
         // may be on a tweet we don't have cached
