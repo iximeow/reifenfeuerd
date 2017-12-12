@@ -386,26 +386,26 @@ impl IdConversions {
             id @ &TweetId::Bare(_) => {
                 tweeter.retrieve_tweet(id).and_then(|tweet| {
                     let now = Local::now();
-                    let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+                    let tweet_date = tweet.recieved_at.with_timezone(&Local);
                     if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
-                        let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+                        let date_string = format!("{:04}{:02}{:02}", tweet_date.year(), tweet_date.month(), tweet_date.day());
                         let today_id = self.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
                         today_id.map(|x| TweetId::Today(*x))
                     } else {
-                        None
+                        Some(TweetId::Bare(tweet.internal_id))
                     }
                 }).unwrap_or(id.to_owned())
             },
             id @ &TweetId::Twitter(_) => {
                 tweeter.retrieve_tweet(id).and_then(|tweet| {
                     let now = Local::now();
-                    let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+                    let tweet_date = tweet.recieved_at.with_timezone(&Local);
                     if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
-                        let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+                        let date_string = format!("{:04}{:02}{:02}", tweet_date.year(), tweet_date.month(), tweet_date.day());
                         let today_id = self.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
                         today_id.map(|x| TweetId::Today(*x))
                     } else {
-                        None
+                        Some(TweetId::Bare(tweet.internal_id))
                     }
                 }).unwrap_or(id.to_owned())
             }
@@ -747,7 +747,7 @@ impl TwitterCache {
             if tw.internal_id == 0 {
                 tw.internal_id = (self.tweets.len() as u64) + 1;
                 self.id_conversions.id_to_tweet_id.insert(tw.internal_id, tw.id.to_owned());
-                let local_recv_time = tw.recieved_at.with_timezone(&Local::now().timezone());
+                let local_recv_time = tw.recieved_at.with_timezone(&Local);
                 let tweet_date = format!("{:04}{:02}{:02}", local_recv_time.year(), local_recv_time.month(), local_recv_time.day());
                 if !self.id_conversions.tweets_by_date.contains_key(&tweet_date) {
                     self.id_conversions.tweets_by_date.insert(tweet_date.clone(), HashMap::new());
@@ -770,10 +770,10 @@ impl TwitterCache {
     }
     pub fn display_id_for_tweet(&self, tweet: &Tweet) -> TweetId {
         let now = Local::now();
-        let tweet_date = tweet.recieved_at.with_timezone(&now.timezone());
+        let tweet_date = tweet.recieved_at.with_timezone(&Local);
         let bare_id = TweetId::Bare(tweet.internal_id);
         let maybe_dated_id = if now.year() == tweet_date.year() && now.month() == tweet_date.month() && now.day() == tweet_date.day() {
-            let date_string = format!("{:04}{:02}{:02}", tweet.recieved_at.year(), tweet.recieved_at.month(), tweet.recieved_at.day());
+            let date_string = format!("{:04}{:02}{:02}", tweet_date.year(), tweet_date.month(), tweet_date.day());
             let today_id = self.id_conversions.tweets_by_date_and_tweet_id.get(&date_string).and_then(|m| m.get(&tweet.internal_id));
             today_id.map(|x| TweetId::Today(*x))
         } else {
