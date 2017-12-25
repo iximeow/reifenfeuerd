@@ -561,7 +561,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                     }
                 };
                 for line in to_draw {
-                    print!("{}{}{}", cursor::Goto(1, height - h), clear::CurrentLine, line);
+                    print!("{}{}{}", cursor::Goto(1, height - h), line, clear::UntilNewline);
                     h = h + 1;
                     if h >= height {
                         break;
