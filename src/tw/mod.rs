@@ -535,6 +535,8 @@ fn parse_word_command<'a, 'b>(line: &'b str, commands: &[&'a Command]) -> Option
         if cmd.params == 0 {
             if line == cmd.keyword {
                 return Some(("", &cmd));
+            } else if line.starts_with(&format!("{} ", cmd.keyword)) {
+                return Some((line.get((cmd.keyword.len() + 1)..).unwrap().trim(), &cmd));
             }
         } else if line.starts_with(cmd.keyword) {
             if line.find(" ").map(|x| x == cmd.keyword.len()).unwrap_or(false) {
