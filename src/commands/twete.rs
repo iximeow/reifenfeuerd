@@ -155,24 +155,31 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
             if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
                 // get handles to reply to...
                 let author_handle = tweeter.retrieve_user(&twete.author_id).unwrap().handle.to_owned();
-                let mut ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
-                ats.remove_item(&author_handle);
-                ats.insert(0, author_handle);
+                let raw_ats: Vec<String> = twete.get_mentions(); //std::collections::HashSet::new();
+                let mut reordered_ats: Vec<String> = Vec::new();
+                if &author_handle != &user_profile.user.handle {
+                    reordered_ats.push(author_handle);
+                }
+                for handle in raw_ats.into_iter() {
+                    if &handle != &user_profile.user.handle {
+                        reordered_ats.push(handle);
+                    }
+                }
                 if let Some(rt_tweet) = twete.rt_tweet.and_then(|id| tweeter.retrieve_tweet(&TweetId::Twitter(id))).map(|x| x.clone()) {
                     let rt_author_handle = tweeter.retrieve_user(&rt_tweet.author_id).unwrap().handle.to_owned();
-                    ats.remove_item(&rt_author_handle);
-                    ats.insert(1, rt_author_handle);
+                    let mut reordered_with_rt = Vec::new();
+                    for mention in reordered_ats {
+                        if mention != rt_author_handle {
+                            reordered_with_rt.push(mention);
+                        }
+                    }
+                    reordered_with_rt.insert(1, rt_author_handle);
+                    reordered_ats = reordered_with_rt;
                 }
 
-                // if you're directly replying to yourself, i trust you know what you're doing and
-                // want to @ yourself again (this keeps self-replies from showing up on your
-                // profile as threaded tweets, f.ex)
-                if !(ats.len() > 0 && &ats[0] == &user_profile.user.handle) {
-                    ats.remove_item(&user_profile.user.handle);
-                }
                 //let ats_vec: Vec<&str> = ats.into_iter().collect();
                 //let full_reply = format!("{} {}", ats_vec.join(" "), reply);
-                let decorated_ats: Vec<String> = ats.into_iter().map(|x| format!("@{}", x)).collect();
+                let decorated_ats: Vec<String> = reordered_ats.into_iter().map(|x| format!("@{}", x)).collect();
                 let full_reply = format!("{} {}", decorated_ats.join(" "), reply);
 
                 if reply.len() > 0 {
