@@ -412,7 +412,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             {
                 let to_show = display_info.log[first_tail_log..last_tail_log].iter().rev();
                 for line in to_show {
-                    print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, display_info.log.len() - 1 - i as usize, display_info.log.len() - 1, line);
+                    print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, display_info.log.len() - 1 - i as usize, display_info.log.len() - 1, line.take(width - 7);
                     i = i + 1;
                 }
             }
@@ -472,7 +472,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                 Some(DisplayMode::Reply(twid, msg)) => {
                     let mut lines: Vec<String> = vec![];
                     lines.push(std::iter::repeat("-").take((width as usize).saturating_sub(2)).collect());
-                    lines.extend(render_twete(&twid, tweeter, display_info, Some(width)));
+                    lines.extend(render_twete(&twid, tweeter, display_info, Some(width - 2)));
                     let reply_delineator = "--------reply";
                     lines.push(format!("{}{}", reply_delineator, std::iter::repeat("-").take((width as usize).saturating_sub(reply_delineator.len() + 2)).collect::<String>()));
                     let msg_lines = into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2);
