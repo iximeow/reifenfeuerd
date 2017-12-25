@@ -412,7 +412,7 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             {
                 let to_show = display_info.log[first_tail_log..last_tail_log].iter().rev();
                 for line in to_show {
-                    print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, display_info.log.len() - 1 - i as usize, display_info.log.len() - 1, line.take(width - 7);
+                    print!("{}{}{}/{}: {}", cursor::Goto(1, height - i), clear::CurrentLine, display_info.log.len() - 1 - i as usize, display_info.log.len() - 1, line.chars().take(width.saturating_sub(7) as usize).collect::<String>());
                     i = i + 1;
                 }
             }
