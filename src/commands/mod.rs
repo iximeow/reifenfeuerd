@@ -10,6 +10,7 @@ pub struct Command {
     pub help_str: &'static str
 }
 
+pub mod dm;
 pub mod help;
 pub mod auth;
 pub mod show_cache;
@@ -23,6 +24,7 @@ pub mod thread;
 pub mod profile;
 
 pub static COMMANDS: &[&Command] = &[
+    &dm::DM,
     &profile::PROFILE,
     &profile::PROFILES,
     &help::HELP,

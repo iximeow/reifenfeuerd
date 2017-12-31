@@ -27,7 +27,7 @@ pub enum Infos {
     TweetWithContext(TweetId, String),
     Thread(Vec<TweetId>),
     Event(tw::events::Event),
-    DM(String),
+    DM(String, String, String),
     User(tw::user::User),
     Text(Vec<String>)
 }
@@ -549,10 +549,8 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                         };
                         wrapped.into_iter().rev().collect()
                     },
-                    Infos::DM(msg) => {
-                        let mut lines = vec![format!("{}{}{} DM:", cursor::Goto(1, height - h), clear::CurrentLine, "from")];
-                        lines.push(msg);
-                        lines
+                    Infos::DM(msg, from_id, to_id) => {
+                        into_display_lines(render_dm(msg, from_id, to_id, tweeter, display_info, width), width).into_iter().rev().collect()
                     }
                     Infos::User(user) => {
                         vec![
@@ -701,6 +699,17 @@ fn short_display_summary(u: &tw::user::User) -> String {
         color_for(&u.handle), u.handle, color::Fg(color::Reset),
         if u.verified { format!(" {}✔️{}", color::Fg(color::Blue), color::Fg(color::Reset)) } else { "".to_owned() }
     )
+}
+
+pub fn render_dm(text: String, from_id: String, to_id: String, tweeter: &tw::TwitterCache, display_info: &mut DisplayInfo, width: u16) -> Vec<String> {
+    let from_user = tweeter.retrieve_user(&from_id).unwrap().clone();
+    let to_user = tweeter.retrieve_user(&to_id).unwrap().clone();
+
+    let mut lines = pad_lines(into_display_lines(text.split("\n").map(|x| x.to_owned()).collect(), width - 2), "  ");
+    let envelope = format!("DM: {} -> {}", short_display_summary(&from_user), short_display_summary(&to_user));
+
+    lines.insert(0, envelope);
+    lines
 }
 
 pub fn render_twete(twete_id: &TweetId, tweeter: &tw::TwitterCache,  display_info: &mut DisplayInfo, width: Option<u16>) -> Vec<String> {
