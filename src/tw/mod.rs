@@ -1200,8 +1200,12 @@ fn handle_twitter_dm(
     display_info: &mut DisplayInfo,
     _queryer: &mut ::Queryer) {
     // show DM
-    display_info.recv(display::Infos::Text(vec![format!("{:?}", structure)]));
-    display_info.recv(display::Infos::DM(structure["direct_message"]["text"].as_str().unwrap().to_string()));
+    tweeter.cache_api_user(structure["direct_message"]["recipient"].clone());
+    tweeter.cache_api_user(structure["direct_message"]["sender"].clone());
+    let dm_text = structure["direct_message"]["text"].as_str().unwrap().to_string();
+    let to = structure["direct_message"]["recipient_id_str"].as_str().unwrap().to_string();
+    let from = structure["direct_message"]["sender_id_str"].as_str().unwrap().to_string();
+    display_info.recv(display::Infos::DM(dm_text, from, to));
 }
 
 fn handle_twitter_welcome(
