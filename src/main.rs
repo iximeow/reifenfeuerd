@@ -57,11 +57,20 @@ pub struct Queryer {
 }
 
 impl Queryer {
-    fn do_api_get(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
-        self.issue_request(signed_api_get(url, app_cred, user_cred))
+    fn do_api_get_noparam(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.do_api_get(url, &vec![], app_cred, user_cred)
     }
-    fn do_api_post(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
-        self.issue_request(signed_api_post(url, app_cred, user_cred))
+
+    fn do_api_get(&mut self, url: &str, params: &Vec<(&str, &str)>, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.issue_request(signed_api_get(url, params, app_cred, user_cred))
+    }
+
+    fn do_api_post_noparam(&mut self, url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.do_api_post(url, &vec![], app_cred, user_cred)
+    }
+
+    fn do_api_post(&mut self, url: &str, params: &Vec<(&str, &str)>, app_cred: &tw::Credential, user_cred: &tw::Credential) -> Result<serde_json::Value, String> {
+        self.issue_request(signed_api_post(url, params, app_cred, user_cred))
     }
     /*
     fn do_web_req(&mut self, url: &str) -> Option<serde_json::Value> {
@@ -126,23 +135,27 @@ fn signed_web_get(url: &str) -> hyper::client::Request {
 }
 */
 
-fn signed_api_post(url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
-    signed_api_req_with_token(url, Method::Post, app_cred, user_cred)
+fn signed_api_post(url: &str, params: &Vec<(&str, &str)>, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    signed_api_req_with_token(url, params, Method::Post, app_cred, user_cred)
 }
 
-fn signed_api_get(url: &str, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
-    signed_api_req_with_token(url, Method::Get, app_cred, user_cred)
+fn signed_api_get(url: &str, params: &Vec<(&str, &str)>, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    signed_api_req_with_token(url, params, Method::Get, app_cred, user_cred)
 }
 
-fn signed_api_req_with_token(url: &str, method: Method, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
-    inner_signed_api_req(url, method, app_cred, Some(user_cred))
+fn signed_api_req_with_token(url: &str, params: &Vec<(&str, &str)>, method: Method, app_cred: &tw::Credential, user_cred: &tw::Credential) -> hyper::client::Request {
+    inner_signed_api_req(url, params, method, app_cred, Some(user_cred))
 }
 
-fn signed_api_req(url: &str, method: Method, app_cred: &tw::Credential) -> hyper::client::Request {
-    inner_signed_api_req(url, method, app_cred, None)
+fn signed_api_req_no_params(url: &str, method: Method, app_cred: &tw::Credential) -> hyper::client::Request {
+    inner_signed_api_req(url, &vec![], method, app_cred, None)
 }
 
-fn inner_signed_api_req(url: &str, method: Method, app_cred: &tw::Credential, maybe_user_cred: Option<&tw::Credential>) -> hyper::client::Request {
+fn signed_api_req(url: &str, params: &Vec<(&str, &str)>, method: Method, app_cred: &tw::Credential) -> hyper::client::Request {
+    inner_signed_api_req(url, params, method, app_cred, None)
+}
+
+fn inner_signed_api_req(url: &str, params: &Vec<(&str, &str)>, method: Method, app_cred: &tw::Credential, maybe_user_cred: Option<&tw::Credential>) -> hyper::client::Request {
 //    let params: Vec<(String, String)> = vec![("track".to_string(), "london".to_string())];
     let method_string = match method {
         Method::Get => "GET",
@@ -150,10 +163,19 @@ fn inner_signed_api_req(url: &str, method: Method, app_cred: &tw::Credential, ma
         _ => panic!(format!("unsupported method {}", method))
     };
 
-    let params: Vec<(String, String)> = vec![];
-    let _param_string: String = params.iter().map(|p| p.0.clone() + &"=".to_string() + &p.1).collect::<Vec<String>>().join("&");
+    let escaped = params.iter().map(|&(ref k, ref v)| format!("{}={}",
+        url_encode(k),
+        url_encode(v)
+    ));
+    let params_str = escaped.collect::<Vec<String>>().join("&");
 
-    let parsed_url = url::Url::parse(url).unwrap();
+    let constructed_url = if params_str.len() > 0 {
+        format!("{}?{}", url, params_str)
+    } else {
+        url.to_owned()
+    };
+
+    let parsed_url = url::Url::parse(&constructed_url).unwrap();
 
     let mut builder = oauthcli::OAuthAuthorizationHeaderBuilder::new(
         method_string,
@@ -169,7 +191,7 @@ fn inner_signed_api_req(url: &str, method: Method, app_cred: &tw::Credential, ma
 
     let header = builder.finish();
 
-    let mut req = Request::new(method, url.parse().unwrap());
+    let mut req = Request::new(method, constructed_url.parse().unwrap());
 
     {
         let headers = req.headers_mut();
@@ -479,35 +501,21 @@ fn do_ui(
 }
 
 fn url_encode(s: &str) -> String {
-    s
-        .replace("%", "%25")
-        .replace("+", "%2b")
-        .replace(" ", "+")
-        .replace("\\n", "%0a")
-        .replace("\\r", "%0d")
-        .replace("\\esc", "%1b")
-        .replace("!", "%21")
-        .replace("#", "%23")
-        .replace("$", "%24")
-        .replace("&", "%26")
-        .replace("'", "%27")
-        .replace("(", "%28")
-        .replace(")", "%29")
-        .replace("*", "%2a")
-        .replace(",", "%2c")
-        .replace("-", "%2d")
-        .replace(".", "%2e")
-        .replace("/", "%2f")
-        .replace(":", "%3a")
-        .replace(";", "%3b")
-        .replace("<", "%3c")
-        .replace("=", "%3d")
-        .replace(">", "%3e")
-        .replace("?", "%3f")
-        .replace("@", "%40")
-        .replace("[", "%5b")
-        .replace("\\", "%5c")
-        .replace("]", "%5d")
+    fn encode_byte(c: u8) -> String {
+        if c == 0x20 {
+            "+".to_string()
+        } else if (c > 0x40 && c <= 0x40 + 26) ||
+           (c > 0x60 && c <= 0x60 + 26) ||
+           (c >= 0x30 && c < 0x3a) ||
+           c == 0x2d || c == 0x2e || c == 0x5f || c == 0x7e  {
+            String::from_utf8(vec![c]).unwrap()
+        } else {
+            String::from(format!("%{:2x}", c))
+        }
+    }
+    s.as_bytes().iter().map(|c| {
+        encode_byte(*c)
+    }).collect::<Vec<String>>().join("")
 }
 
 //    let (twete_tx, twete_rx) = chan::sync::<Vec<u8>>(0);
@@ -536,7 +544,7 @@ fn connect_twitter_stream(
             .connector(connector)
             .build(&core.handle());
 
-        let req = signed_api_get(STREAMURL, &app_cred, &user_cred);
+        let req = signed_api_get(STREAMURL, &vec![], &app_cred, &user_cred);
         let work = client.request(req).and_then(|res| {
             let status = res.status();
             if status != hyper::StatusCode::Ok {
