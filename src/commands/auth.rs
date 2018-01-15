@@ -29,7 +29,14 @@ fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, dis
     // callback set to oob so the user will later get a PIN.
     // step 1: now present the correect oauth/authorize URL
     // this is as far as auth can get (rest depends on user PIN'ing with the right thing)
-    let res = queryer.raw_issue_request(::signed_api_req(&format!("{}?oauth_callback=oob", OAUTH_REQUEST_TOKEN_URL), hyper::Method::Post, &tweeter.app_key));
+    let res = queryer.raw_issue_request(
+        ::signed_api_req(
+            OAUTH_REQUEST_TOKEN_URL,
+            &vec![("oauth_callback", "oob")],
+            hyper::Method::Post,
+            &tweeter.app_key
+        )
+    );
     match res {
         Ok(bytes) =>
             match std::str::from_utf8(&bytes) {
@@ -49,7 +56,7 @@ fn auth(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, dis
                     display_info.status("couldn't rebuild url".to_owned())
             },
         Err(e) =>
-            display_info.status(format!("request token url error: {}", e))
+            display_info.status(format!("error starting auth: {}", e))
     };
 }
 
@@ -67,7 +74,15 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
         return;
     }
 
-    let res = queryer.raw_issue_request(::signed_api_req_with_token(&format!("{}?oauth_verifier={}", OAUTH_ACCESS_TOKEN_URL, line), hyper::Method::Post, &tweeter.app_key, &tweeter.WIP_auth.clone().unwrap()));
+    let res = queryer.raw_issue_request(
+        ::signed_api_req_with_token(
+            OAUTH_ACCESS_TOKEN_URL,
+            &vec![("oauth_verifier", &line)],
+            hyper::Method::Post,
+            &tweeter.app_key,
+            &tweeter.WIP_auth.clone().unwrap()
+        )
+    );
     match res {
         Ok(bytes) =>
             match std::str::from_utf8(&bytes) {
@@ -97,7 +112,7 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                         secret: as_map["oauth_token_secret"].to_owned()
                     };
 
-                    match queryer.do_api_get(::ACCOUNT_SETTINGS_URL, &tweeter.app_key, &user_credential) {
+                    match queryer.do_api_get_noparam(::ACCOUNT_SETTINGS_URL, &tweeter.app_key, &user_credential) {
                         Ok(settings) => {
                             let user_handle = settings["screen_name"].as_str().unwrap().to_owned();
                             /*
@@ -105,7 +120,8 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                              * largely the same logic as `look_up_user`.
                              */
                             let looked_up_user = queryer.do_api_get(
-                                &format!("{}?screen_name={}", ::USER_LOOKUP_URL, user_handle),
+                                ::USER_LOOKUP_URL,
+                                &vec![("screen_name", &user_handle)],
                                 &tweeter.app_key,
                                 &user_credential
                             ).and_then(|json| tw::user::User::from_json(json));
@@ -136,6 +152,6 @@ fn pin(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
                     display_info.status("couldn't rebuild url".to_owned())
             },
         Err(e) =>
-            display_info.status(format!("request token url error: {}", e))
+            display_info.status(format!("pin submission error: {}", e))
     };
 }
