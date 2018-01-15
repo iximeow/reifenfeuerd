@@ -202,8 +202,7 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
 }
 
 pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential, display_info: &mut DisplayInfo) {
-    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
-        let substituted = ::url_encode(&text);
+    if let Some(twete) = tweeter.retrieve_tweet(&twid) {
         let result = match tweeter.current_profile() {
             Some(user_profile) => {
                 queryer.do_api_post(
@@ -242,7 +241,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
             let maybe_id = TweetId::parse(id_str.to_owned());
             match maybe_id {
                 Ok(twid) => {
-                    if let Some(twete) = tweeter.retrieve_tweet(&twid).map(|x| x.clone()) { // TODO: no clone when this stops taking &mut self
+                    if let Some(twete) = tweeter.retrieve_tweet(&twid) {
                         let attachment_url =
                             &format!(
                                 "https://www.twitter.com/{}/status/{}",
