@@ -19,7 +19,7 @@ fn unfl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, dis
     let screen_name = line.trim();
     let result = match tweeter.current_profile() {
         Some(user_profile) => {
-            queryer.do_api_post(&format!("{}?screen_name={}", FOLLOW_URL, screen_name), &tweeter.app_key, &user_profile.creds)
+            queryer.do_api_post(FOLLOW_URL, &vec![("screen_name", &screen_name)], &tweeter.app_key, &user_profile.creds)
         },
         None => Err("No logged in user to unfollow from".to_owned())
     };
@@ -45,7 +45,8 @@ fn fl(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, displ
                 format!(
                     "fl resp: {:?}",
                     queryer.do_api_post(
-                        &format!("{}?screen_name={}", UNFOLLOW_URL, screen_name),
+                        UNFOLLOW_URL,
+                        &vec![("screen_name", &screen_name)],
                         &tweeter.app_key,
                         &user_profile.creds
                     )

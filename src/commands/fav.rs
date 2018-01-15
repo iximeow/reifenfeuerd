@@ -23,7 +23,7 @@ fn unfav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
         Ok(twid) => {
             if let Some(twete) = tweeter.retrieve_tweet(&twid) {
                 let result = match tweeter.current_profile() {
-                    Some(user_profile) => queryer.do_api_post(&format!("{}?id={}", UNFAV_TWEET_URL, twete.id), &tweeter.app_key, &user_profile.creds),
+                    Some(user_profile) => queryer.do_api_post(UNFAV_TWEET_URL, &vec![("id", &twete.id)], &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to unfav from".to_owned())
                 };
                 match result {
@@ -55,7 +55,7 @@ fn fav(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
             // tweeter.to_twitter_tweet_id(twid)...
             if let Some(twete) = tweeter.retrieve_tweet(&twid) {
                 let result = match tweeter.current_profile() {
-                    Some(user_profile) => queryer.do_api_post(&format!("{}?id={}", FAV_TWEET_URL, twete.id), &tweeter.app_key, &user_profile.creds),
+                    Some(user_profile) => queryer.do_api_post(FAV_TWEET_URL, &vec![("id", &twete.id)], &tweeter.app_key, &user_profile.creds),
                     None => Err("No logged in user to fav from".to_owned())
                 };
                 match result {

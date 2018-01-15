@@ -571,10 +571,10 @@ impl TwitterProfile {
         }
     }
     pub fn get_settings(&self, queryer: &mut ::Queryer, app_key: &Credential) -> Result<serde_json::Value, String> {
-        queryer.do_api_get(::ACCOUNT_SETTINGS_URL, app_key, &self.creds)
+        queryer.do_api_get_noparam(::ACCOUNT_SETTINGS_URL, app_key, &self.creds)
     }
     pub fn get_followers(&self, queryer: &mut ::Queryer, app_key: &Credential) -> Result<serde_json::Value, String> {
-        queryer.do_api_get(::GET_FOLLOWER_IDS_URL, app_key, &self.creds)
+        queryer.do_api_get_noparam(::GET_FOLLOWER_IDS_URL, app_key, &self.creds)
     }
     pub fn set_following(&mut self, user_ids: Vec<String>) -> (Vec<String>, Vec<String>) {
         let uid_set = user_ids.into_iter().collect::<HashSet<String>>();
@@ -1096,17 +1096,15 @@ impl TwitterCache {
     }
 
     fn look_up_user(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        let url = &format!("{}?user_id={}", ::USER_LOOKUP_URL, id);
         match self.current_profile() {
-            Some(ref user_profile) => queryer.do_api_get(url, &self.app_key, &user_profile.creds),
+            Some(ref user_profile) => queryer.do_api_get(::USER_LOOKUP_URL, &vec![("user_id", id)], &self.app_key, &user_profile.creds),
             None => Err("No authorized user to conduct lookup".to_owned())
         }
     }
 
     fn look_up_tweet(&mut self, id: &str, queryer: &mut ::Queryer) -> Result<serde_json::Value, String> {
-        let url = &format!("{}&id={}", ::TWEET_LOOKUP_URL, id);
         match self.current_profile() {
-            Some(ref user_profile) => queryer.do_api_get(url, &self.app_key, &user_profile.creds),
+            Some(ref user_profile) => queryer.do_api_get(::TWEET_LOOKUP_URL, &vec![("id", id)], &self.app_key, &user_profile.creds),
             None => Err("No authorized user to conduct lookup".to_owned())
         }
     }
@@ -1202,7 +1200,10 @@ fn handle_twitter_dm(
     // show DM
     tweeter.cache_api_user(structure["direct_message"]["recipient"].clone());
     tweeter.cache_api_user(structure["direct_message"]["sender"].clone());
-    let dm_text = structure["direct_message"]["text"].as_str().unwrap().to_string();
+    let dm_text = structure["direct_message"]["text"].as_str().unwrap().to_string()
+        .replace("&amp;", "&")
+        .replace("&gt;", ">")
+        .replace("&lt;", "<");
     let to = structure["direct_message"]["recipient_id_str"].as_str().unwrap().to_string();
     let from = structure["direct_message"]["sender_id_str"].as_str().unwrap().to_string();
     display_info.recv(display::Infos::DM(dm_text, from, to));
