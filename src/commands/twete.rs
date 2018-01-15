@@ -1,4 +1,5 @@
 use display::DisplayInfo;
+use serde_json;
 use tw;
 use ::Queryer;
 
@@ -61,15 +62,7 @@ fn twete(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
 }
 
 pub fn send_twete(text: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, display_info: &mut DisplayInfo) {
-    let result = match tweeter.current_profile() {
-        Some(user_profile) => queryer.do_api_post(
-            CREATE_TWEET_URL,
-            &vec![("status", &text)],
-            &tweeter.app_key,
-            &user_profile.creds
-        ),
-        None => Err("No logged in user to tweet as".to_owned())
-    };
+    let result = make_tweet(&text, vec![("status", &text)], queryer, tweeter);
     match result {
         Ok(_) => (),
         Err(e) => display_info.status(e)
@@ -201,19 +194,26 @@ fn rep(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, disp
     }
 }
 
+pub fn make_tweet(text: &str, params: Vec<(&str, &str)>, queryer: &mut Queryer, tweeter: &tw::TwitterCache) -> Result<serde_json::Value, String> {
+    let updated_text = if tweeter.translate_emoji {
+        text
+            .replace(":thinking:", "🤔")
+            .replace(":clap:", "👏")
+    } else {
+        text.to_owned()
+    };
+    let mut all_params = params;
+    all_params.push(("status", &updated_text));
+
+    match tweeter.current_profile() {
+        Some(user_profile) => queryer.do_api_post(CREATE_TWEET_URL, &all_params, &tweeter.app_key, &user_profile.creds),
+        None => Err("No logged in user to tweet as".to_owned())
+    }
+}
+
 pub fn send_reply(text: String, twid: TweetId, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, user_creds: tw::Credential, display_info: &mut DisplayInfo) {
     if let Some(twete) = tweeter.retrieve_tweet(&twid) {
-        let result = match tweeter.current_profile() {
-            Some(user_profile) => {
-                queryer.do_api_post(
-                    CREATE_TWEET_URL,
-                    &vec![("status", &text), ("in_reply_to_status_id", &twete.id)],
-                    &tweeter.app_key,
-                    &user_creds
-                )
-            },
-            None => Err("No logged in user to tweet as".to_owned())
-        };
+        let result = make_tweet(&text, vec![("in_reply_to_status_id", &twete.id)], queryer, tweeter);
         match result {
             Ok(_) => (),
             Err(e) => display_info.status(e)
@@ -248,18 +248,7 @@ fn quote(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, di
                                 tweeter.retrieve_user(&twete.author_id).unwrap().handle, // TODO: for now this is ok ish, if we got the tweet we have the author
                                 twete.id
                             );
-                        let result = match tweeter.current_profile() {
-                            Some(user_profile) => {
-                                queryer.do_api_post(
-                                    CREATE_TWEET_URL,
-                                    &vec![("status", reply), ("attachment_url", attachment_url)],
-
-                                    &tweeter.app_key,
-                                    &user_profile.creds
-                                )
-                            },
-                            None => Err("No logged in user to tweet as".to_owned())
-                        };
+                        let result = make_tweet(reply, vec![("attachment_url", attachment_url)], queryer, tweeter);
                         match result {
                             Ok(_) => (),
                             Err(e) => display_info.status(e)

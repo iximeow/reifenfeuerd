@@ -830,8 +830,19 @@ pub fn render_twete_no_recurse(twete_id: &TweetId, tweeter: &tw::TwitterCache, d
                 colorized_lines.push(new_line);
             }
 
+            let emoji_replaced: Vec<String> = if tweeter.translate_emoji {
+                colorized_lines.iter().map(|line| {
+                    line
+                        .replace("🤔", ":thinking:")
+                        .replace("👏",":clap:")
+                }).collect()
+            } else {
+                colorized_lines
+            };
+
+
             let mut urls_to_include: Vec<&str> = vec![];
-            let urls_replaced = colorized_lines
+            let urls_replaced = emoji_replaced
                 .into_iter()
                 .map(|line| {
                     let mut result: String = line.to_owned();
