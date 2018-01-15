@@ -432,9 +432,9 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
             /*
              * draw in whatever based on mode...
              */
+            let handle = tweeter.current_profile().map(|profile| profile.user.handle.to_owned()).unwrap_or("_default_".to_owned());
             let (cursor_x, cursor_y) = match display_info.mode.clone() {
                 None => {
-                    let handle = tweeter.current_profile().map(|profile| profile.user.handle.to_owned()).unwrap_or("_default_".to_owned());
                     print!("{}{}{}",
                            cursor::Goto(1, height - 6), clear::CurrentLine,
                            if twevent_offset != 0 {
@@ -449,14 +449,22 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                     let mut lines: Vec<String> = vec![];
                     let msg_lines = into_display_lines(x.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
-                    lines.push(std::iter::repeat("-").take((width as usize).saturating_sub(2)).collect());
+                    let desc = format!("compose (as @{})", handle);
+                    let desc_line = format!(
+                        "--{}{}",
+                        desc,
+                        std::iter::repeat("-")
+                            .take((width as usize).saturating_sub(4 + desc.len()))
+                            .collect::<String>()
+                    );
+                    lines.push(desc_line);
                     lines.extend(msg_lines);
                     if lines.len() == 0 {
                         lines.push("".to_owned());
                     }
                     // TODO: properly probe tweet length lim
                     let counter = format!("{}/{}", x.len(), 280);
-                    lines.push(format!("{}{}", counter, std::iter::repeat("-").take((width as usize).saturating_sub(counter.len() + 2)).collect::<String>()));
+                    lines.push(format!("{}{}", counter, std::iter::repeat("-").take((width as usize).saturating_sub(counter.len() + 4)).collect::<String>()));
                     lines.insert(0, "".to_owned());
                     let mut lines_drawn: u16 = 0;
                     for line in lines.into_iter().rev() {
@@ -471,9 +479,13 @@ pub fn paint(tweeter: &::tw::TwitterCache, display_info: &mut DisplayInfo) -> Re
                 }
                 Some(DisplayMode::Reply(twid, msg)) => {
                     let mut lines: Vec<String> = vec![];
-                    lines.push(std::iter::repeat("-").take((width as usize).saturating_sub(2)).collect());
+                    lines.push(
+                        std::iter::repeat("-")
+                            .take((width as usize).saturating_sub(2))
+                            .collect::<String>()
+                    );
                     lines.extend(render_twete(&twid, tweeter, display_info, Some(width - 2)));
-                    let reply_delineator = "--------reply";
+                    let reply_delineator = format!("--reply (as @{})", handle);
                     lines.push(format!("{}{}", reply_delineator, std::iter::repeat("-").take((width as usize).saturating_sub(reply_delineator.len() + 2)).collect::<String>()));
                     let msg_lines = into_display_lines(msg.split("\n").map(|x| x.to_owned()).collect(), width - 2);
                     let cursor_idx = msg_lines.last().map(|x| x.len()).unwrap_or(0);
