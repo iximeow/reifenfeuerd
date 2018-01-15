@@ -136,6 +136,8 @@ pub struct TwitterCache {
     pub profiles: HashMap<String, TwitterProfile>,
     mutes: MuteInfo,
     threads: HashMap<String, u64>, // thread : latest_tweet_in_thread
+    #[serde(default = "bool::default")]
+    pub translate_emoji: bool,
     #[serde(skip)]
     pub needs_save: bool,
     #[serde(skip)]
@@ -668,6 +670,7 @@ impl TwitterCache {
             // have one channel up per twitter stream...
             curr_profile: None,
             profiles: HashMap::new(),
+            translate_emoji: false,
             needs_save: false,
             caching_permitted: true,
             threads: HashMap::new(),
