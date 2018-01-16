@@ -39,12 +39,11 @@ fn dm(line: String, tweeter: &mut tw::TwitterCache, queryer: &mut Queryer, displ
         handle_chars
     }.into_iter().collect::<String>();
 
-    let encoded = ::url_encode(dm_text);
     let result = match tweeter.current_profile() {
         Some(user_profile) => {
             queryer.do_api_post(
                 DM_CREATE_URL,
-                &vec![("text", &encoded), ("screen_name", &normalized_handle)],
+                &vec![("text", &dm_text), ("screen_name", &normalized_handle)],
                 &tweeter.app_key,
                 &user_profile.creds
             )
